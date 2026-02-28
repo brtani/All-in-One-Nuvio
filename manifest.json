@@ -21,22 +21,12 @@
       "description": "XDMovies - Premium streaming with multiple quality options and servers",
       "version": "2.0.0",
       "author": "JK",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
+      "supportedTypes": ["movie", "tv"],
       "filename": "src/providers/xdmovies.js",
       "enabled": true,
-      "formats": [
-        "mp4",
-        "mkv",
-        "m3u8"
-      ],
+      "formats": ["mp4", "mkv", "m3u8"],
       "logo": "https://xdmovies.site/favicon.ico",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
+      "contentLanguage": ["en", "hi"]
     },
     {
       "id": "hianime",
@@ -44,41 +34,24 @@
       "description": "HiAnime - Anime and Asian content streaming",
       "version": "2.0.0",
       "author": "JK",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
+      "supportedTypes": ["movie", "tv"],
       "filename": "src/providers/hianime.js",
       "enabled": true,
-      "formats": [
-        "mp4",
-        "mkv",
-        "m3u8"
-      ],
+      "formats": ["mp4", "mkv", "m3u8"],
       "logo": "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/Icons/hianime.png",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
+      "contentLanguage": ["en", "hi"]
     },
     {
       "id": "flixindia",
       "name": "FlixIndia",
       "description": "Streaming provider for FlixIndia",
       "version": "1.0.0",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
+      "supportedTypes": ["movie", "tv"],
       "filename": "providers/flixindia.js",
       "enabled": true,
-      "formats": [
-        "mkv"
-      ],
+      "formats": ["mkv"],
       "logo": "https://m.flixindia.xyz/onepieceskull.png",
-      "contentLanguage": [
-        "en", "hi"
-      ]  
+      "contentLanguage": ["en", "hi"]  
     },
     { 
       "id": "twoembed",
@@ -86,22 +59,12 @@
       "description": "TwoEmbed - Alternative streaming provider with multiple sources",
       "version": "2.0.0",
       "author": "JK",
-      "supportedTypes": [
-        "movie",
-        "tv"
-      ],
+      "supportedTypes": ["movie", "tv"],
       "filename": "src/providers/twoembed.js",
       "enabled": true,
-      "formats": [
-        "mp4",
-        "mkv",
-        "m3u8"
-      ],
+      "formats": ["mp4", "mkv", "m3u8"],
       "logo": "https://www.twoembed.com/favicon.ico",
-      "contentLanguage": [
-        "en",
-        "hi"
-      ]
+      "contentLanguage": ["en", "hi"]
     }
   ]
 }
