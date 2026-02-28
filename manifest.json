@@ -65,6 +65,32 @@
       "formats": ["mp4", "mkv", "m3u8"],
       "logo": "https://www.twoembed.com/favicon.ico",
       "contentLanguage": ["en", "hi"]
+    },
+    {
+      "id": "fembed",
+      "name": "Fembed",
+      "description": "Fembed API - Filmes, Séries e Animes",
+      "version": "1.0.0",
+      "author": "saimuel",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/fembed.js",
+      "enabled": true,
+      "formats": ["m3u8"],
+      "logo": "https://fembed.sx/assets/favicon.png",
+      "contentLanguage": ["pt"]
+    },
+    {
+      "id": "fshd",
+      "name": "FSHD",
+      "description": "FSHD - Séries em 1080p",
+      "version": "1.0.0",
+      "author": "saimuel",
+      "supportedTypes": ["tv"],
+      "filename": "providers/fshd.js",
+      "enabled": true,
+      "formats": ["m3u8"],
+      "logo": "https://fshd.link/favicon.ico",
+      "contentLanguage": ["pt"]
     }
   ]
 }
