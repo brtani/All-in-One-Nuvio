@@ -90,7 +90,7 @@
       "enabled": true,
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/2yLnTzPP/kisskh.jpg",
-      "contentLanguage": ["en", "ko"]
+      "contentLanguage": ["ko", "ch", "ja", "th"]
     },
     {
       "id": "dramafull",
