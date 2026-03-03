@@ -206,7 +206,7 @@
       "filename": "providers/viu.js",
       "enabled": true,
       "formats": ["m3u8"],
-      "contentLanguage": ["ar", "ko", "zh"],
+      "contentLanguage": ["ar", "ko", "zh"]
     }
   ]
 }
