@@ -1,73 +1,49 @@
 const NAME = "viu";
 
-async function extractStream(url) {
+async function getStreams(tmdbId, type, season, episode) {
+  console.log("[viu] getStreams:", tmdbId, type, season, episode);
+
   try {
-    const res = await fetch(url, {
+    let api;
+
+    if (type === "movie") {
+      api = `https://vidsrc.to/ajax/embed/episode/${tmdbId}`;
+    } else {
+      const s = season || 1;
+      const e = episode || 1;
+      api = `https://vidsrc.to/ajax/embed/episode/${tmdbId}/${s}/${e}`;
+    }
+
+    const res = await fetch(api, {
       headers: {
         "User-Agent": "Mozilla/5.0",
         Referer: "https://vidsrc.to/"
       }
     });
 
-    const html = await res.text();
+    const json = await res.json();
 
-    // Grab JSON inside VidSrc player JS
-    const jsMatch = html.match(/var\s+player_.*?=\s*(\{.*\});/s);
-    if (!jsMatch) return null;
-
-    let data;
-    try {
-      data = JSON.parse(jsMatch[1]);
-    } catch (e) {
-      return null;
-    }
-
-    if (!data || !data.sources) return null;
-
-    // Find first .m3u8 URL
-    const m3u8 = data.sources.find(s => s.file && s.file.endsWith(".m3u8"));
-    if (!m3u8) return null;
-
-    return m3u8.file;
-  } catch (err) {
-    console.log("[viu] extract error:", err.message);
-    return null;
-  }
-}
-
-async function getStreams(tmdbId, type, season, episode) {
-  console.log("[viu] getStreams:", tmdbId, type, season, episode);
-
-  try {
-    let embed;
-
-    if (type === "movie") {
-      embed = `https://vidsrc.to/embed/movie/${tmdbId}`;
-    } else {
-      const s = season || 1;
-      const e = episode || 1;
-      embed = `https://vidsrc.to/embed/tv/${tmdbId}/${s}/${e}`;
-    }
-
-    const stream = await extractStream(embed);
-
-    if (!stream) {
-      console.log("[viu] no stream found");
+    if (!json || !json.result) {
+      console.log("[viu] no results");
       return [];
     }
 
-    return [
-      {
+    const streams = [];
+
+    for (const s of json.result) {
+      streams.push({
         name: NAME,
-        title: "VidSrc",
-        url: stream,
+        title: s.title || "stream",
+        url: s.url,
         quality: "auto",
         headers: {
           Referer: "https://vidsrc.to/",
           "User-Agent": "Mozilla/5.0"
         }
-      }
-    ];
+      });
+    }
+
+    return streams;
   } catch (err) {
     console.log("[viu] error:", err.message);
     return [];
