@@ -1,195 +1,131 @@
 console.log("[DOMTY] Provider loaded");
 
-// ─────────────────────────────────────────
-// CONFIG
-// ─────────────────────────────────────────
+const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 
-const TMDB_API = "https://api.themoviedb.org/3/";
-const TMDB_KEY = "439c478a771f35c05022f9feabcca01c";
+const SOURCES = [
+  { name: "CimaNow", base: "https://cimanow.cc" },
+  { name: "MyCima", base: "https://mycima.to" },
+  { name: "ArabSeed", base: "https://arabseed.ink" }
+];
 
 const HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
   Accept: "*/*",
+  "Accept-Language": "en-US,en;q=0.9"
 };
 
-const SITES = [
-  "https://cimawbas.org",
-  "https://mycima.horse",
-  "https://ak.sv",
-  "https://fajer.show",
-  "https://larozavideo.net",
-];
-
-// ─────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────
-
 function request(url, headers = {}) {
-  return fetch(url, { headers: { ...HEADERS, ...headers } }).then((r) => {
+  return fetch(url, {
+    headers: { ...HEADERS, ...headers }
+  }).then(r => {
     if (!r.ok) throw new Error("HTTP " + r.status);
     return r.text();
   });
 }
 
-function findStreams(html) {
-  const links = [];
-  const regex = /(https?:\/\/[^"' ]+\.(m3u8|mp4)[^"' ]*)/gi;
-  let m;
-
-  while ((m = regex.exec(html)) !== null) {
-    if (!links.includes(m[1])) links.push(m[1]);
-  }
-
-  return links;
-}
-
-function findIframes(html) {
-  const frames = [];
-  const re = /<iframe[^>]+src=["']([^"']+)["']/gi;
-  let m;
-
-  while ((m = re.exec(html)) !== null) {
-    frames.push(m[1]);
-  }
-
-  return frames;
-}
-
 function qualityFromUrl(url) {
+  if (!url) return "HD";
   if (url.includes("2160")) return "4K";
   if (url.includes("1080")) return "1080p";
   if (url.includes("720")) return "720p";
   return "HD";
 }
 
-// ─────────────────────────────────────────
-// RESOLVE STREAM PAGE
-// ─────────────────────────────────────────
+function createStream(url, referer) {
+  let type = "video/mp4";
+  if (url.includes(".m3u8")) type = "application/x-mpegURL";
 
-function resolvePage(site, pageUrl) {
-  console.log("[DOMTY] Opening page:", pageUrl);
-
-  return request(pageUrl, { Referer: site })
-    .then((html) => {
-      let streams = findStreams(html);
-
-      if (streams.length) return streams.map((s) => makeStream(site, s, pageUrl));
-
-      const iframes = findIframes(html);
-
-      return Promise.all(
-        iframes.slice(0, 4).map((frame) => {
-          let url = frame;
-
-          if (url.startsWith("//")) url = "https:" + url;
-          if (url.startsWith("/")) url = site + url;
-
-          return request(url, { Referer: pageUrl })
-            .then((iframeHtml) => {
-              return findStreams(iframeHtml).map((s) =>
-                makeStream(site, s, url)
-              );
-            })
-            .catch(() => []);
-        })
-      ).then((r) => r.flat());
-    })
-    .catch(() => []);
-}
-
-function makeStream(name, url, referer) {
   return {
-    name: name.replace("https://", ""),
-    title: qualityFromUrl(url),
-    url: url,
+    url,
     quality: qualityFromUrl(url),
+    type,
     headers: {
       Referer: referer,
-      "User-Agent": HEADERS["User-Agent"],
-    },
+      Origin: referer,
+      "User-Agent": HEADERS["User-Agent"]
+    }
   };
 }
 
-// ─────────────────────────────────────────
-// SEARCH SITE
-// ─────────────────────────────────────────
+function extractStreams(html, referer) {
+  const links = [];
 
-function searchSite(site, title) {
-  const searchUrl = site + "/?s=" + encodeURIComponent(title);
+  const re = /(https?:\/\/[^"' ]+\.(m3u8|mp4)[^"' ]*)/gi;
+  let m;
 
-  console.log("[DOMTY] Searching:", searchUrl);
+  while ((m = re.exec(html))) {
+    links.push(createStream(m[1], referer));
+  }
 
-  return request(searchUrl, { Referer: site })
-    .then((html) => {
-      const results = [];
-      const re = /<a[^>]+href=["'](https?:\/\/[^"']+)["'][^>]*>(.*?)<\/a>/gi;
-      let m;
-
-      while ((m = re.exec(html)) !== null) {
-        if (m[2] && m[2].toLowerCase().includes(title.toLowerCase())) {
-          results.push(m[1]);
-        }
-      }
-
-      return results.slice(0, 3);
-    })
-    .catch(() => []);
+  return links;
 }
 
-// ─────────────────────────────────────────
-// GET TMDB TITLE
-// ─────────────────────────────────────────
+function resolvePlayer(url, base) {
+  return request(url, { Referer: base }).then(html => {
+    let streams = extractStreams(html, url);
+    if (streams.length) return streams;
 
-function getTitle(tmdbId, type) {
+    const iframe = html.match(/<iframe[^>]+src=["']([^"']+)/i);
+    if (!iframe) return [];
+
+    let iframeUrl = iframe[1];
+
+    if (iframeUrl.startsWith("//")) iframeUrl = "https:" + iframeUrl;
+    if (iframeUrl.startsWith("/")) iframeUrl = base + iframeUrl;
+
+    return request(iframeUrl, { Referer: url }).then(h => {
+      return extractStreams(h, iframeUrl);
+    });
+  });
+}
+
+function searchSource(source, query) {
+  const searchUrl = `${source.base}/?s=${encodeURIComponent(query)}`;
+
+  return request(searchUrl, { Referer: source.base }).then(html => {
+    const match = html.match(/href="(https?:\/\/[^"]+)"/i);
+    if (!match) return null;
+    return match[1];
+  });
+}
+
+function getTitle(tmdbId, mediaType) {
   const url =
-    TMDB_API +
-    (type === "tv" ? "tv/" : "movie/") +
-    tmdbId +
-    "?api_key=" +
-    TMDB_KEY;
+    `https://api.themoviedb.org/3/${mediaType === "tv" ? "tv" : "movie"}/${tmdbId}?api_key=${TMDB_API_KEY}`;
 
   return fetch(url)
-    .then((r) => r.json())
-    .then((data) => {
-      return type === "tv" ? data.name : data.title;
+    .then(r => r.json())
+    .then(data => {
+      return mediaType === "tv" ? data.name : data.title;
     });
 }
 
-// ─────────────────────────────────────────
-// MAIN ENTRY
-// ─────────────────────────────────────────
+function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) {
+  console.log("[DOMTY] Fetching streams", tmdbId);
 
-function getStreams(tmdbId, mediaType, season, episode) {
-  console.log("[DOMTY] getStreams:", tmdbId, mediaType);
+  return getTitle(tmdbId, mediaType).then(title => {
+    if (!title) return [];
 
-  return getTitle(tmdbId, mediaType).then((title) => {
-    console.log("[DOMTY] Title:", title);
+    const tasks = SOURCES.map(source => {
+      return searchSource(source, title)
+        .then(url => {
+          if (!url) return [];
+          return resolvePlayer(url, source.base);
+        })
+        .catch(() => []);
+    });
 
-    const searches = SITES.map((site) =>
-      searchSite(site, title).then((results) => {
-        if (!results.length) return [];
+    return Promise.all(tasks).then(results => {
+      const all = [].concat(...results);
 
-        return resolvePage(site, results[0]);
-      })
-    );
+      const seen = new Set();
 
-    return Promise.all(searches).then((all) => {
-      const streams = all.flat();
-
-      const unique = [];
-      const seen = {};
-
-      streams.forEach((s) => {
-        if (!seen[s.url]) {
-          seen[s.url] = true;
-          unique.push(s);
-        }
+      return all.filter(s => {
+        if (seen.has(s.url)) return false;
+        seen.add(s.url);
+        return true;
       });
-
-      console.log("[DOMTY] Streams found:", unique.length);
-
-      return unique;
     });
   });
 }
