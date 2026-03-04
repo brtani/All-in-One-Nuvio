@@ -1,33 +1,38 @@
-const fetch = (...args) =>
-  import("node-fetch").then(({ default: fetch }) => fetch(...args));
+// ───────── Node fetch polyfill ─────────
+let fetchFunc;
+try {
+  fetchFunc = fetch;
+} catch {
+  const nodeFetch = require("node-fetch");
+  fetchFunc = nodeFetch;
+}
 
-const PROVIDER_NAME = "DomTy";
-
-// Nuvio uses this to list the provider
-exports.provider = {
-  name: PROVIDER_NAME,
+// ───────── Provider Metadata ─────────
+module.exports = {
+  name: "DomTy",
   id: "domty",
   languages: ["en"],
-};
 
-// Optional search (some builds require it)
-exports.search = async function (query) {
-  return [
-    {
-      title: query,
-      year: "",
-      id: query,
-    },
-  ];
-};
+  // Optional search (some builds require this)
+  search: async (query) => {
+    return [
+      {
+        title: query,
+        year: "",
+        id: query,
+      },
+    ];
+  },
 
-// Main stream function
-exports.getStreams = async function (id, type, season, episode) {
-  return [
-    {
-      name: PROVIDER_NAME,
-      url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
-      quality: "HD",
-    },
-  ];
+  // Main stream function
+  getStreams: async (id, type, season, episode) => {
+    // Test stream so we can confirm provider loads
+    return [
+      {
+        name: "DomTy",
+        url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+        quality: "HD",
+      },
+    ];
+  },
 };
