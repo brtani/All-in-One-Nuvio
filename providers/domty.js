@@ -1,119 +1,223 @@
-// Domty Arabic Provider for Nuvio
-// Searches multiple Arabic streaming mirrors
+// Domty Multi‑Source Provider for Nuvio
+// Compatible with NetMirror-style loaders
 
-console.log('[Domty] Arabic provider loaded');
+console.log('[Domty] Initializing provider');
 
-const SOURCES = [
-    { name: "CimaNow", base: "https://wecima.show" },
-    { name: "MyCima", base: "https://mycima.to" },
-    { name: "Cima4U", base: "https://cima4u.tv" },
-    { name: "ArabSeed", base: "https://arabseed.show" }
-];
-
-const HEADERS = {
-    "User-Agent": "Mozilla/5.0",
-    "Accept": "*/*"
+// ── Shared ───────────────────────────────────────────────────────────────────
+var DEFAULT_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept-Language': 'ar,en;q=0.9',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
-function request(url) {
-    return fetch(url, { headers: HEADERS }).then(function (r) {
-        return r.text();
-    });
+function httpGet(url, extraHeaders) {
+  var headers = Object.assign({}, DEFAULT_HEADERS, extraHeaders || {});
+  return fetch(url, { headers: headers }).then(function(res) {
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res.text();
+  });
 }
 
-function extractVideos(html, referer) {
-    const streams = [];
-    const regex = /(https?:\/\/[^"' ]+\.(m3u8|mp4)[^"' ]*)/gi;
+function extractDirectSources(html) {
+  var sources = [];
+  var patterns = [
+    /["'](https?:\/\/[^"']+\.m3u8[^"']*?)["']/g,
+    /["'](https?:\/\/[^"']+\.mp4[^"']*?)["']/g,
+    /file:\s*["'](https?:\/\/[^"']+)["']/g,
+    /src:\s*["'](https?:\/\/[^"']+\.m3u8[^"']*?)["']/g,
+  ];
 
-    let match;
-
-    while ((match = regex.exec(html)) !== null) {
-        streams.push({
-            name: "Domty",
-            title: "Arabic Server",
-            quality: "HD",
-            url: match[1],
-            headers: {
-                Referer: referer,
-                "User-Agent": HEADERS["User-Agent"]
-            }
-        });
+  patterns.forEach(function(re) {
+    var m;
+    while ((m = re.exec(html)) !== null) {
+      if (sources.indexOf(m[1]) === -1) sources.push(m[1]);
     }
+  });
 
-    return streams;
+  return sources;
 }
 
-function searchSite(site, query) {
+function extractIframes(html) {
+  var iframes = [];
+  var re = /<iframe[^>]+(?:src|data-src)=["']([^"']+)["']/gi;
+  var m;
 
-    const searchUrl = site.base + "/?s=" + encodeURIComponent(query);
+  while ((m = re.exec(html)) !== null) {
+    if (m[1].indexOf('http') === 0) iframes.push(m[1]);
+  }
 
-    return request(searchUrl)
-        .then(function (html) {
+  return iframes;
+}
 
-            const linkMatch = html.match(/href="(https?:\/\/[^"]+)"/i);
+function normalizeQuality(str) {
+  if (!str) return 'HD';
+  if (/4k|2160/i.test(str)) return '4K';
+  if (/1080/i.test(str)) return '1080p';
+  if (/720/i.test(str)) return '720p';
+  if (/480/i.test(str)) return '480p';
+  return 'HD';
+}
 
-            if (!linkMatch) return [];
+function makeStream(name, url, quality, referer) {
+  var s = { name: name, title: quality, url: url, quality: quality };
 
-            return request(linkMatch[1]).then(function (page) {
-                return extractVideos(page, linkMatch[1]);
+  if (referer) {
+    s.headers = {
+      'Referer': referer,
+      'User-Agent': DEFAULT_HEADERS['User-Agent']
+    };
+  }
+
+  return s;
+}
+
+function fetchStreamsFromPage(name, pageUrl, base) {
+  return httpGet(pageUrl, { Referer: base }).then(function(html) {
+
+    var streams = [];
+
+    extractDirectSources(html).forEach(function(u) {
+      streams.push(makeStream(name, u, normalizeQuality(u), pageUrl));
+    });
+
+    if (streams.length) return streams;
+
+    var iframes = extractIframes(html);
+
+    return Promise.all(
+      iframes.slice(0, 3).map(function(src) {
+        return httpGet(src, { Referer: pageUrl })
+          .then(function(ih) {
+
+            return extractDirectSources(ih).map(function(u) {
+              return makeStream(name, u, normalizeQuality(u), src);
             });
-        })
-        .catch(function () {
+
+          }).catch(function() {
             return [];
-        });
+          });
+      })
+    ).then(function(r) {
+      return r.reduce(function(a, b) {
+        return a.concat(b);
+      }, streams);
+    });
+
+  });
 }
 
-function getTitleFromTMDB(tmdbId, type) {
+function searchSite(name, base, query, mediaType) {
 
-    const key = "439c478a771f35c05022f9feabcca01c";
+  var url = base + '/?s=' + encodeURIComponent(query);
 
-    const url =
-        "https://api.themoviedb.org/3/" +
-        (type === "tv" ? "tv/" : "movie/") +
-        tmdbId +
-        "?api_key=" +
-        key;
+  return httpGet(url, { Referer: base })
+    .then(function(html) {
 
-    return request(url).then(function (data) {
-        const json = JSON.parse(data);
+      var items = [];
+      var re = /<article[^>]*>([\s\S]*?)<\/article>/gi;
+      var m;
 
-        return type === "tv" ? json.name : json.title;
+      while ((m = re.exec(html)) !== null) {
+
+        var block = m[1];
+
+        var titleM = block.match(/<h[23][^>]*>([^<]+)<\/h[23]>/i);
+        var linkM = block.match(/href=["'](https?:\/\/[^"']+)["']/i);
+
+        if (titleM && linkM) {
+
+          items.push({
+            name: name,
+            base: base,
+            title: titleM[1].trim(),
+            url: linkM[1],
+            isMovie: /film|movie/.test(linkM[1])
+          });
+
+        }
+      }
+
+      return items;
+
+    }).catch(function() {
+      return [];
     });
 }
 
+// ── Sources ───────────────────────────────────────────────────────────────────
+var SOURCES = [
+  { id: 'cimawbas', base: 'https://cimawbas.org' },
+  { id: 'egybest', base: 'https://egybest.la' },
+  { id: 'mycima', base: 'https://mycima.horse' },
+  { id: 'flowind', base: 'https://flowind.net' },
+  { id: 'aksv', base: 'https://ak.sv' },
+  { id: 'fajer', base: 'https://fajer.show' },
+  { id: 'x7k9f', base: 'https://x7k9f.sbs' },
+  { id: 'asd', base: 'https://asd.pics' },
+  { id: 'laroza', base: 'https://q.larozavideo.net' },
+  { id: 'animezid', base: 'https://eg.animezid.cc' },
+  { id: 'arabic-toons', base: 'https://arabic-toons.com' },
+];
 
-// MAIN FUNCTION
+// ── Main ─────────────────────────────────────────────────────────────────────
 function getStreams(tmdbId, mediaType, season, episode) {
 
-    console.log("[Domty] Searching Arabic sites...");
+  console.log('[Domty] getStreams:', tmdbId, mediaType);
 
-    return getTitleFromTMDB(tmdbId, mediaType).then(function (title) {
+  var query = mediaType === 'tv'
+    ? tmdbId + ' s' + (season || 1) + 'e' + (episode || 1)
+    : tmdbId;
 
-        console.log("[Domty] Title:", title);
+  var promises = SOURCES.map(function(source) {
 
-        const jobs = SOURCES.map(function (site) {
-            return searchSite(site, title);
-        });
+    return searchSite(source.id, source.base, query, mediaType)
 
-        return Promise.all(jobs).then(function (results) {
+      .then(function(results) {
 
-            const streams = [];
+        if (!results.length) return [];
 
-            results.forEach(function (list) {
-                streams.push.apply(streams, list);
-            });
+        var match = results[0];
 
-            // fallback so provider always appears
-            if (streams.length === 0) {
-                streams.push({
-                    name: "Domty",
-                    title: "Fallback Stream",
-                    quality: "HD",
-                    url: "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
-                });
-            }
+        for (var i = 0; i < results.length; i++) {
 
-            return streams;
-        });
+          if (mediaType === 'movie' && results[i].isMovie) {
+            match = results[i];
+            break;
+          }
+
+          if (mediaType !== 'movie' && !results[i].isMovie) {
+            match = results[i];
+            break;
+          }
+
+        }
+
+        return fetchStreamsFromPage(source.id, match.url, source.base);
+
+      })
+
+      .catch(function() {
+        return [];
+      });
+
+  });
+
+  return Promise.all(promises).then(function(results) {
+
+    var all = results.reduce(function(a, b) {
+      return a.concat(b);
+    }, []);
+
+    var seen = {};
+
+    return all.filter(function(s) {
+
+      if (seen[s.url]) return false;
+
+      seen[s.url] = true;
+      return true;
+
     });
-}
+
+  });
+   }
