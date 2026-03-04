@@ -1,134 +1,64 @@
 const PROVIDER_NAME = "Domty";
 
-const TMDB_KEY = "439c478a771f35c05022f9feabcca01c";
-
-const SOURCES = [
-  { name: "FaselHD", base: "https://www.faselhd.watch" },
-  { name: "CimaNow", base: "https://cimanow.cc" },
-  { name: "Akwam", base: "https://akwam.to" }
-];
-
-async function getTitle(id, type) {
-
-  const url =
-    "https://api.themoviedb.org/3/" +
-    (type === "tv" ? "tv/" : "movie/") +
-    id +
-    "?api_key=" +
-    TMDB_KEY;
-
-  const r = await fetch(url);
-  const j = await r.json();
-
-  return type === "tv" ? j.name : j.title;
+function buildVidSrcMovie(tmdbId) {
+  return `https://vidsrc.xyz/embed/movie?tmdb=${tmdbId}`;
 }
 
-async function request(url) {
-
-  const r = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Referer": url
-    }
-  });
-
-  return await r.text();
+function buildVidSrcTV(tmdbId, season, episode) {
+  return `https://vidsrc.xyz/embed/tv?tmdb=${tmdbId}&season=${season}&episode=${episode}`;
 }
 
-function findLinks(html) {
-
-  const links = [];
-
-  const videoRegex = /(https?:\/\/[^"' ]+\.(m3u8|mp4)[^"' ]*)/g;
-
-  let m;
-
-  while ((m = videoRegex.exec(html)) !== null) {
-
-    links.push({
-      url: m[1],
-      name: "Arabic Server",
-      quality: "HD"
-    });
-
-  }
-
-  const iframeRegex = /<iframe[^>]+src="([^"]+)"/g;
-
-  while ((m = iframeRegex.exec(html)) !== null) {
-
-    links.push({
-      url: m[1],
-      name: "Embed Server",
-      quality: "HD"
-    });
-
-  }
-
-  return links;
+function build2EmbedMovie(tmdbId) {
+  return `https://www.2embed.cc/embed/${tmdbId}`;
 }
 
-async function search(site, query) {
-
-  const url = site.base + "/?s=" + encodeURIComponent(query);
-
-  const html = await request(url);
-
-  const match = html.match(/<a href="([^"]+)"[^>]*class="[^"]*title[^"]*"/);
-
-  if (!match) return null;
-
-  return match[1];
+function build2EmbedTV(tmdbId, season, episode) {
+  return `https://www.2embed.cc/embedtv/${tmdbId}&s=${season}&e=${episode}`;
 }
 
 async function getStreams(tmdbId, type, season, episode) {
 
-  console.log("[Domty] start");
+  console.log("[DOMTY] Fetching streams for:", tmdbId);
 
-  const title = await getTitle(tmdbId, type);
+  const streams = [];
 
-  let query = title;
+  try {
 
-  if (type === "tv" && season) {
-    query += " season " + season;
-  }
+    if (type === "movie") {
 
-  const results = [];
-
-  for (const site of SOURCES) {
-
-    try {
-
-      const page = await search(site, query);
-
-      if (!page) continue;
-
-      const html = await request(page);
-
-      const links = findLinks(html);
-
-      links.forEach(l => {
-        results.push({
-          name: site.name + " | " + l.name,
-          url: l.url,
-          quality: l.quality
-        });
+      streams.push({
+        name: "VidSrc",
+        url: buildVidSrcMovie(tmdbId),
+        quality: "HD"
       });
 
-    } catch (e) {
-      console.log("source failed", site.name);
+      streams.push({
+        name: "2Embed",
+        url: build2EmbedMovie(tmdbId),
+        quality: "HD"
+      });
+
+    } else {
+
+      streams.push({
+        name: "VidSrc TV",
+        url: buildVidSrcTV(tmdbId, season || 1, episode || 1),
+        quality: "HD"
+      });
+
+      streams.push({
+        name: "2Embed TV",
+        url: build2EmbedTV(tmdbId, season || 1, episode || 1),
+        quality: "HD"
+      });
+
     }
 
+  } catch (e) {
+    console.log("DOMTY ERROR", e);
   }
 
-  const seen = new Set();
-
-  return results.filter(r => {
-    if (seen.has(r.url)) return false;
-    seen.add(r.url);
-    return true;
-  });
-
+  return streams;
 }
 
 module.exports = {
