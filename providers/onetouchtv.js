@@ -1,54 +1,98 @@
 const BASE = "https://movix.blog";
-const TMDB = "https://api.themoviedb.org/3/";
-const KEY = "8d6d91784c04f98f6e241852615c441b";
+const TMDB_KEY = "8d6d91784c04f98f6e241852615c441b";
+
+async function safeFetch(url, headers = {}) {
+    try {
+        const res = await fetch(url, { headers });
+        if (!res.ok) return null;
+        return await res.text();
+    } catch (e) {
+        return null;
+    }
+}
+
+async function getMeta(tmdbId, mediaType) {
+    try {
+
+        const type = mediaType === "tv" ? "tv" : "movie";
+
+        const res = await fetch(
+            `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${TMDB_KEY}&language=en-US`
+        );
+
+        const json = await res.json();
+
+        return json.title || json.name || null;
+
+    } catch (e) {
+        return null;
+    }
+}
+
+async function extractStreams(playerUrl, referer) {
+
+    let streams = [];
+
+    const html = await safeFetch(playerUrl, {
+        "Referer": referer,
+        "User-Agent": "Mozilla/5.0"
+    });
+
+    if (!html) return streams;
+
+    const regex = /(https?:\/\/[^"' ]+\.(m3u8|mp4)[^"' ]*)/gi;
+
+    let match;
+
+    while ((match = regex.exec(html)) !== null) {
+
+        streams.push({
+            name: "Movix",
+            title: "Movix Stream",
+            url: match[1],
+            quality: "HD",
+            source: "Movix",
+            headers: {
+                Referer: playerUrl,
+                "User-Agent": "Mozilla/5.0"
+            }
+        });
+
+    }
+
+    return streams;
+}
 
 async function getStreams(tmdbId, mediaType, season, episode) {
 
     try {
 
-        // ───────── TMDB metadata ─────────
-        const metaRes = await fetch(
-            TMDB + (mediaType === "tv" ? "tv/" : "movie/") +
-            tmdbId +
-            "?api_key=" + KEY + "&language=en-US"
-        );
+        const title = await getMeta(tmdbId, mediaType);
 
-        const meta = await metaRes.json();
-
-        const title = meta.title || meta.name;
         if (!title) return [];
 
-        // ───────── Search Movix ─────────
-        const searchRes = await fetch(
-            BASE + "/search?q=" + encodeURIComponent(title),
-            {
-                headers: {
-                    "User-Agent": "Mozilla/5.0"
-                }
-            }
+        const searchHtml = await safeFetch(
+            `${BASE}/search?q=${encodeURIComponent(title)}`,
+            { "User-Agent": "Mozilla/5.0" }
         );
 
-        const html = await searchRes.text();
+        if (!searchHtml) return [];
 
-        const linkMatch =
-            html.match(/href="\/movie\/([^"]+)"/i) ||
-            html.match(/href="\/watch\/([^"]+)"/i);
+        const match =
+            searchHtml.match(/href="\/movie\/([^"]+)"/i) ||
+            searchHtml.match(/href="\/watch\/([^"]+)"/i);
 
-        if (!linkMatch) return [];
+        if (!match) return [];
 
-        const movieUrl = BASE + "/movie/" + linkMatch[1];
+        const pageUrl = `${BASE}/movie/${match[1]}`;
 
-        // ───────── Open movie page ─────────
-        const pageRes = await fetch(movieUrl, {
-            headers: {
-                "Referer": BASE,
-                "User-Agent": "Mozilla/5.0"
-            }
+        const pageHtml = await safeFetch(pageUrl, {
+            Referer: BASE,
+            "User-Agent": "Mozilla/5.0"
         });
 
-        const pageHtml = await pageRes.text();
+        if (!pageHtml) return [];
 
-        // ───────── Extract iframes ─────────
         const iframeRegex = /<iframe[^>]+src="([^"]+)"/gi;
 
         let iframe;
@@ -58,53 +102,19 @@ async function getStreams(tmdbId, mediaType, season, episode) {
 
             const iframeUrl = iframe[1];
 
-            try {
+            const extracted = await extractStreams(iframeUrl, pageUrl);
 
-                const playerRes = await fetch(iframeUrl, {
-                    headers: {
-                        "Referer": movieUrl,
-                        "User-Agent": "Mozilla/5.0"
-                    }
-                });
-
-                const playerHtml = await playerRes.text();
-
-                // ───────── Extract streams ─────────
-                const streamRegex =
-                    /(https?:\/\/[^"' ]+\.m3u8[^"' ]*)|(https?:\/\/[^"' ]+\.mp4[^"' ]*)/gi;
-
-                let match;
-
-                while ((match = streamRegex.exec(playerHtml)) !== null) {
-
-                    const streamUrl = match[1] || match[2];
-
-                    streams.push({
-                        name: "Movix",
-                        title: "Movix Server",
-                        url: streamUrl,
-                        quality: "HD",
-                        source: "Movix",
-                        headers: {
-                            Referer: iframeUrl,
-                            "User-Agent": "Mozilla/5.0"
-                        }
-                    });
-
-                }
-
-            } catch (err) {}
+            streams.push(...extracted);
 
         }
 
         return streams;
 
-    } catch (err) {
+    } catch (e) {
 
         return [];
 
     }
-
 }
 
 module.exports = { getStreams };
