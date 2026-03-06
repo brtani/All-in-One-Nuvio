@@ -1,102 +1,63 @@
-const MAIN_URL = Buffer.from("aHR0cHM6Ly9hcGkzLmRldmNvcnAubWU=", "base64").toString("utf8");
+// onetouchtv.mjs
+import fetch from "node-fetch";
 
-function decryptString(data) {
-    try {
-        if (data.startsWith("{") || data.startsWith("[")) return data;
-        return Buffer.from(data, "base64").toString("utf8");
-    } catch {
-        return data;
-    }
+const BASE_API = "https://api3.devcorp.me";
+
+// Fetch all VOD items (movies + series)
+async function fetchCatalog() {
+  try {
+    const res = await fetch(`${BASE_API}/share/vod/`);
+    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    const data = await res.json();
+
+    // Map to Nuvio-friendly catalog
+    return data.map(item => {
+      if (item.episodes && item.episodes.length) {
+        // Series
+        return {
+          name: item.title,
+          type: "series",
+          episodes: item.episodes.map(ep => ({
+            name: ep.title,
+            url: ep.url,
+            type: "hls",
+            isM3U8: true
+          }))
+        };
+      } else {
+        // Single movie / VOD
+        return {
+          name: item.title,
+          url: item.url,
+          type: "vod",
+          isM3U8: true
+        };
+      }
+    });
+  } catch (e) {
+    console.error("Failed to fetch catalog:", e.message);
+    return [];
+  }
 }
 
-async function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
+// Fetch streams by movie/series name
+export async function getStreams(query) {
+  const catalog = await fetchCatalog();
+  if (!catalog.length) return [];
 
-    try {
+  // Try to match by name (case-insensitive)
+  const match = catalog.find(i => i.name.toLowerCase().includes(query.toLowerCase()));
+  if (!match) return [];
 
-        const TMDB_KEY = "b030404650f279792a8d3287232358e3";
-
-        const tmdb = await fetch(
-            `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=${TMDB_KEY}`
-        ).then(r => r.json());
-
-        const title =
-            tmdb.title ||
-            tmdb.name ||
-            tmdb.original_title ||
-            tmdb.original_name;
-
-        const searchRaw = await fetch(
-            `${MAIN_URL}/vod/search?page=1&keyword=${encodeURIComponent(title)}`
-        ).then(r => r.text());
-
-        const searchJson = JSON.parse(decryptString(searchRaw));
-        const results = searchJson.result || searchJson;
-
-        if (!results || results.length === 0) return [];
-
-        const match = results[0];
-        const id = match.id;
-
-        const detailRaw = await fetch(`${MAIN_URL}/vod/${id}/detail`)
-            .then(r => r.text());
-
-        const detail = JSON.parse(decryptString(detailRaw));
-        const episodes = detail.episodes;
-
-        if (!episodes || episodes.length === 0) return [];
-
-        let target;
-
-        if (mediaType === "movie") {
-            target = episodes[episodes.length - 1];
-        } else {
-            target = episodes.find(e =>
-                parseInt(e.episode) === parseInt(episodeNum)
-            );
-        }
-
-        if (!target) return [];
-
-        const epRaw = await fetch(
-            `${MAIN_URL}/vod/${target.identifier}/episode/${target.playId}`
-        ).then(r => r.text());
-
-        const epData = JSON.parse(decryptString(epRaw));
-
-        const streams = [];
-
-        const sources =
-            epData.sources ||
-            epData.data?.sources ||
-            [];
-
-        sources.forEach(src => {
-
-            if (!src.url) return;
-
-            streams.push({
-                name: src.name || "OneTouchTV",
-                title: "OneTouchTV",
-                url: src.url,
-                quality: src.quality || "Auto",
-                headers: src.headers || {},
-                provider: "onetouchtv"
-            });
-
-        });
-
-        return streams;
-
-    } catch (err) {
-
-        console.log("OneTouchTV Error:", err);
-        return [];
-
-    }
+  if (match.episodes) return match.episodes; // Series
+  return [match]; // Single movie
 }
 
-if (typeof module !== "undefined") {
-    module.exports = { getStreams };
-} else {
-    global.getStreams = getStreams;
+// Test the provider
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const test = async () => {
+    const streams = await getStreams("live"); // Replace with movie/series name
+    console.log(streams);
+  };
+  test();
 }
