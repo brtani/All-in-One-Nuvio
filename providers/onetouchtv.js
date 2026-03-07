@@ -1,25 +1,13 @@
 const axios = require("axios");
 const CryptoJS = require("crypto-js");
 
-const provider = {
-  id: "onetouchtv",
-  name: "OneTouchTV",
-  languages: ["en"],
+const BASE_URL = "https://s1.devcorp.me";
+const PROVIDER_NAME = "OneTouchTV";
 
-  async getMovie(tmdbId) {
-    return getStreams(tmdbId, "movie");
-  },
-
-  async getTv(tmdbId, season, episode) {
-    return getStreams(tmdbId, "tv", season, episode);
-  }
-};
-
-const API_BASE = "https://s1.onetouchtv.me/api";
-
+// AES key from Cloudstream provider
 const HEX_KEY = "4f6e65546f7563685465564b6579";
 
-function decrypt(data) {
+function decryptAES(data) {
   try {
     const key = CryptoJS.enc.Hex.parse(HEX_KEY);
 
@@ -34,57 +22,58 @@ function decrypt(data) {
   }
 }
 
-async function getStreams(tmdbId, type, season, episode) {
+async function getStreams(tmdbId, mediaType, season, episode) {
   try {
 
-    let url;
+    let api;
 
-    if (type === "movie") {
-      url = `${API_BASE}/movie/${tmdbId}`;
+    if (mediaType === "movie") {
+      api = `${BASE_URL}/api/movie/${tmdbId}`;
     } else {
-      url = `${API_BASE}/tv/${tmdbId}/${season}/${episode}`;
+      api = `${BASE_URL}/api/tv/${tmdbId}/${season}/${episode}`;
     }
 
-    const res = await axios.get(url, {
+    const res = await axios.get(api, {
       headers: {
         "User-Agent": "Mozilla/5.0",
-        "Referer": "https://onetouchtv.me/",
-        "Origin": "https://onetouchtv.me"
+        "Referer": "https://s1.devcorp.me/",
+        "Origin": "https://s1.devcorp.me"
       }
     });
 
-    const encrypted = res.data?.data;
+    if (!res.data || !res.data.data) return [];
 
-    if (!encrypted) return [];
-
-    const decrypted = decrypt(encrypted);
+    const decrypted = decryptAES(res.data.data);
 
     if (!decrypted) return [];
 
     const json = JSON.parse(decrypted);
 
-    const links = [];
+    const streams = [];
 
     if (json.sources) {
       json.sources.forEach(source => {
         if (!source.file) return;
 
-        links.push({
+        streams.push({
           url: source.file,
           quality: source.label || "HD",
           type: "hls",
           headers: {
-            Referer: "https://onetouchtv.me/"
+            Referer: "https://s1.devcorp.me/"
           }
         });
       });
     }
 
-    return links;
+    return streams;
 
-  } catch (e) {
+  } catch (err) {
     return [];
   }
 }
 
-module.exports = provider;
+module.exports = {
+  name: PROVIDER_NAME,
+  getStreams
+};
