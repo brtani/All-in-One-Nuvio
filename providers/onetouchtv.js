@@ -1,6 +1,6 @@
 const cheerio = require('cheerio-without-node-native');
 
-const PLAYER = "https://s1.devcorp.me/player/player.html";
+const PLAYER_BASE = "https://s1.devcorp.me/player/player.html";
 
 function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
     return new Promise((resolve) => {
@@ -8,24 +8,25 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
         const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=b030404650f279792a8d3287232358e3`;
 
         fetch(tmdbUrl)
-        .then(r => r.json())
+        .then(res => res.json())
         .then(tmdb => {
 
             const title = tmdb.title || tmdb.name || tmdb.original_title;
             const year = (tmdb.release_date || tmdb.first_air_date || "").substring(0,4);
 
-            let playerUrl;
+            let queryTitle;
 
             if (mediaType === "movie") {
-                playerUrl = `${PLAYER}?title=${encodeURIComponent(title)}%20(${year})`;
+                queryTitle = `${title} (${year})`;
             } else {
-                playerUrl = `${PLAYER}?title=${encodeURIComponent(title)}%20(${year})%20-%20Episode%20${episodeNum}`;
+                queryTitle = `${title} (${year}) - Episode ${episodeNum}`;
             }
 
-            return fetch(playerUrl);
+            const playerUrl = `${PLAYER_BASE}?title=${encodeURIComponent(queryTitle)}`;
 
+            return fetch(playerUrl);
         })
-        .then(r => r.text())
+        .then(res => res.text())
         .then(html => {
 
             const streams = [];
@@ -39,14 +40,14 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
 
             const servers = JSON.parse(`[${match[1]}]`);
 
-            servers.forEach(s => {
+            servers.forEach(server => {
 
-                if (!s.file) return;
+                if (!server.file) return;
 
                 streams.push({
                     name: "OneTouchTV",
-                    title: s.title || "Server",
-                    url: s.file,
+                    title: server.title || "Server",
+                    url: server.file,
                     quality: "Auto",
                     headers: {
                         Referer: "https://s1.devcorp.me/",
@@ -58,7 +59,6 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
             });
 
             resolve(streams);
-
         })
         .catch(() => resolve([]));
 
