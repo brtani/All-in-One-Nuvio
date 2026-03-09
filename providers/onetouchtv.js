@@ -3,7 +3,6 @@ const crypto = require("crypto");
 
 const API = "https://api3.devcorp.me";
 
-// AES key/IV from Decryption.kt
 const keyHex = Buffer.from(
   "Njk2ZDM3MzI2MzY4NjE3MjUwNjE3MzczNzc2ZjcyNjQ2ZjY2NjQ0OTZlNjk3NDU2NjU2Mzc0NmY3MjUzNzQ2ZA==",
   "base64"
@@ -43,32 +42,64 @@ function decryptString(input) {
   }
 }
 
+// Utility to parse sources and tracks like OneTouchTVParser.kt
+function parseSourcesAndTracks(data) {
+  const sourcesList = [];
+  const tracksList = [];
+
+  if (!data) return { sourcesList, tracksList };
+
+  const result = data.result || data;
+
+  // Sources
+  if (result.sources && Array.isArray(result.sources)) {
+    for (const s of result.sources) {
+      sourcesList.push({
+        name: s.name || "Server",
+        url: s.url,
+        quality: s.quality || "Auto",
+        headers: s.headers || { referer: API }
+      });
+    }
+  }
+
+  // Subtitles
+  const tracksArray = result.track || result.tracks;
+  if (tracksArray && Array.isArray(tracksArray)) {
+    for (const t of tracksArray) {
+      tracksList.push({
+        file: t.file,
+        name: t.name || "Subtitle"
+      });
+    }
+  }
+
+  return { sourcesList, tracksList };
+}
+
 function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
   return new Promise(async (resolve) => {
     try {
-      // 1️⃣ Fetch TMDB title
       const tmdbUrl = `https://api.themoviedb.org/3/${mediaType}/${tmdbId}?api_key=b030404650f279792a8d3287232358e3`;
       const tmdbRes = await axios.get(tmdbUrl);
       const title = tmdbRes.data.title || tmdbRes.data.name || tmdbRes.data.original_title;
 
-      // 2️⃣ Search OneTouchTV API
+      // Search series
       const searchUrl = `${API}/vod/search?page=1&keyword=${encodeURIComponent(title)}`;
       const searchRes = await axios.get(searchUrl, { headers: { referer: API } });
       const searchData = decryptString(searchRes.data);
       if (!searchData || searchData.length === 0) return resolve([]);
 
-      // Pick best match
       let series = searchData.find(item => item.title.toLowerCase() === title.toLowerCase());
       if (!series) series = searchData[0];
       if (!series) return resolve([]);
 
-      // 3️⃣ Fetch series detail
+      // Fetch detail
       const detailUrl = `${API}/vod/${series.id}/detail`;
       const detailRes = await axios.get(detailUrl, { headers: { referer: API } });
       const detailData = decryptString(detailRes.data);
       if (!detailData || !detailData.episodes) return resolve([]);
 
-      // 4️⃣ Find target episode
       let ep;
       if (mediaType === "movie") {
         ep = detailData.episodes[detailData.episodes.length - 1];
@@ -77,25 +108,25 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
       }
       if (!ep) return resolve([]);
 
-      // 5️⃣ Fetch episode sources
+      // Fetch episode sources
       const episodeUrl = `${API}/vod/${ep.identifier}/episode/${ep.playId}`;
       const epRes = await axios.get(episodeUrl, { headers: { referer: API } });
       const epData = decryptString(epRes.data);
-      if (!epData || !epData.sources) return resolve([]);
 
-      // 6️⃣ Map sources to Nuvio streams
-      const streams = [];
-      for (const src of epData.sources) {
-        if (!src.url) continue;
-        streams.push({
-          name: src.name || "Server",
-          title: series.title,
-          url: src.url,
-          quality: src.quality || "Auto",
-          headers: src.headers || { referer: API },
-          provider: "OneTouchTV"
-        });
-      }
+      if (!epData) return resolve([]);
+
+      // Parse sources and subtitles
+      const { sourcesList, tracksList } = parseSourcesAndTracks(epData);
+
+      const streams = sourcesList.map(s => ({
+        name: s.name,
+        title: series.title,
+        url: s.url,
+        quality: s.quality,
+        headers: s.headers,
+        provider: "OneTouchTV",
+        subtitles: tracksList // Attach subtitles for Nuvio
+      }));
 
       resolve(streams);
     } catch (e) {
@@ -105,7 +136,6 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
   });
 }
 
-// Export for Nuvio
 if (typeof module !== "undefined" && module.exports) {
   module.exports = { getStreams };
 } else {
