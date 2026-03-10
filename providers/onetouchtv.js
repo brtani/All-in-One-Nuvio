@@ -1,37 +1,83 @@
-// Nuvio Local Scraper Template: atishmkv3 -> HubCloud -> Direct Link
-// IMPORTANT: async/await is NOT supported in Nuvio. Use standard Promises.
+function getStreams(tmdbId, mediaType, seasonNum, episodeNum, title) {
 
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
-    return new Promise((resolve, reject) => {
-        let movieTitle = "example-movie"; // You would pull this from TMDB in a real scenario
-        let searchUrl = `https://atishmkv3.bond/?s=${movieTitle}`;
+    return new Promise(function(resolve) {
 
-        // 1. Search the main site
+        let results = [];
+        let searchUrl = "https://atishmkv3.bond/?s=" + encodeURIComponent(title);
+
         fetch(searchUrl)
-            .then(response => response.text())
-            .then(html => {
-                // 2. Find the movie page link
-                let moviePageMatch = html.match(/href="(https:\/\/atishmkv3\.bond\/[^"]+)"/);
-                if (!moviePageMatch) return resolve([]);
-                
-                return fetch(moviePageMatch[1]); 
-            })
-            .then(response => response ? response.text() : null)
-            .then(html => {
-                if (!html) return resolve([]);
+        .then(function(res){ return res.text(); })
 
-                // 3. Find the HubCloud link on the movie page
-                let hubcloudMatch = html.match(/(https:\/\/[a-zA-Z0-9-]+\.hubcloud\.[a-zA-Z]+\/[^"'\s]+)/);
-                
-                if (!hubcloudMatch) return resolve([]);
-                let hubcloudUrl = hubcloudMatch[1];
+        .then(function(html){
 
-                // 4. Fetch the HubCloud page
-                return fetch(hubcloudUrl); 
-            })
-            .then(response => response ? response.text() : null)
-            .then(html => {
-                if (!html) return resolve([]);
+            // find first result post link
+            let match = html.match(/<a[^>]+href="(https:\/\/atishmkv3\.bond\/[^"]+)"[^>]*rel="bookmark"/i);
 
-                // 5. Extract the final video link
-                let finalStreamMatch = html.match(/href="(https:\/\/[^"]+\.(?:mkv|mp4|m3u8)[^"]*
+            if(!match) {
+                resolve([]);
+                return null;
+            }
+
+            return fetch(match[1]);
+        })
+
+        .then(function(res){
+            if(!res) return null;
+            return res.text();
+        })
+
+        .then(function(html){
+
+            if(!html){
+                resolve([]);
+                return null;
+            }
+
+            // extract player API
+            let playerMatch = html.match(/https:\/\/atishmkv\.rpmhub\.site\/api\/v1\/player\?t=[a-f0-9]+/i);
+
+            if(!playerMatch){
+                resolve([]);
+                return null;
+            }
+
+            return fetch(playerMatch[0]);
+        })
+
+        .then(function(res){
+            if(!res) return null;
+            return res.text();
+        })
+
+        .then(function(data){
+
+            if(!data){
+                resolve([]);
+                return;
+            }
+
+            // extract master stream
+            let stream = data.match(/https?:\/\/[^"]+master\.m3u8[^"]*/i);
+
+            if(!stream){
+                resolve([]);
+                return;
+            }
+
+            results.push({
+                url: stream[0],
+                name: "AtishMKV",
+                quality: "Auto",
+                type: "hls"
+            });
+
+            resolve(results);
+
+        })
+
+        .catch(function(){
+            resolve([]);
+        });
+
+    });
+}
