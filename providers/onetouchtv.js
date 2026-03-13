@@ -6,17 +6,17 @@ function getStreams(tmdbId, type, season, episode) {
   let url;
 
   if(type === "movie"){
-   url = "https://dooflix-api.vercel.app/movie/" + tmdbId;
+    url = "https://dooflix.app/movie/" + tmdbId;
   } else {
-   url = "https://dooflix-api.vercel.app/tv/" + tmdbId + "/" + season + "/" + episode;
+    url = "https://dooflix.app/tv/" + tmdbId + "/" + season + "/" + episode;
   }
 
   streams.push({
-   name: "Dooflix",
-   title: "Dooflix Stream",
-   url: url,
-   quality: "Auto",
-   provider: "dooflix"
+    name: "Dooflix",
+    title: "Dooflix Stream",
+    url: url,
+    quality: "Auto",
+    provider: "dooflix"
   });
 
   resolve(streams);
