@@ -120,9 +120,23 @@
       "contentLanguage": ["en"] 
     },
     {
+      "id": "diziyou",
+      "name": "DiziYou",
+      "description": "Movies & Series in English & Turkish",
+      "version": "1.0.4",
+      "author": "MoOnCrOwN",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/diziyou.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "https://i.postimg.cc/K8nYLrL3/diziyou.png",
+      "icon": "https://i.postimg.cc/K8nYLrL3/diziyou.png",
+      "contentLanguage": ["en", "tr"]
+    },
+    {
       "id": "embed69",
       "name": "Embed69",
-      "description": "Movies & Series",
+      "description": "Movies & Series in English & Spanish",
       "version": "1.0.0",
       "author": "KennethJYS",
       "supportedTypes": ["movie", "tv"],
