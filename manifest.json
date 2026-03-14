@@ -129,7 +129,8 @@
       "filename": "providers/embed69.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/SK9YMsHG/embed69.png",
+      "icon": "https://i.postimg.cc/SK9YMsHG/embed69.png",
       "contentLanguage": ["en", "es"]
     },
     {
