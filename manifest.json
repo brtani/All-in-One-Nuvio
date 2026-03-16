@@ -105,7 +105,7 @@
       "limited": true,
       "formats": ["mp4", "m3u8"],
       "logo": "",
-      "contentLanguage": ["en", "hi', "ta"]
+      "contentLanguage": ["en", "hi"]
     },
     {
       "id": "castle",
