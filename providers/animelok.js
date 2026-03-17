@@ -1,61 +1,64 @@
-const ffmpeg = require('fluent-ffmpeg');
+const puppeteer = require('puppeteer');
 
-/**
- * Nuvio Provider Configuration
- * This mimics the structure used in many modern JS-based scrapers.
- */
-const NuvioProvider = {
-    name: 'AnimePahe',
-    baseUrl: 'https://animepahe.si',
-    cdnUrl: 'https://vault-99.owocdn.top',
-
-    // Headers required to bypass CDN 403 blocks
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
-        'Referer': 'https://animepahe.si/',
-        'Origin': 'https://animepahe.si',
-        'Accept': '*/*',
-    }
-};
-
-/**
- * getStream
- * The core function to pull the .m3u8 and convert it to .mp4
- */
-async function getStream(m3u8Url, outputName = 'video.mp4') {
-    console.log(`[Nuvio] Initializing stream capture for: ${outputName}`);
-
-    return new Promise((resolve, reject) => {
-        ffmpeg(m3u8Url)
-            // Critical: Adding the headers to the input stream
-            .inputOptions([
-                `-headers User-Agent: ${NuvioProvider.headers['User-Agent']}\r\n`,
-                `-headers Referer: ${NuvioProvider.headers.Referer}\r\n`
-            ])
-            .videoCodec('copy') // 'copy' is fast; it doesn't re-encode, just containers it
-            .audioCodec('copy')
-            .output(outputName)
-            .on('start', (commandLine) => {
-                console.log('Spawned FFmpeg with command: ' + commandLine);
-            })
-            .on('progress', (progress) => {
-                if (progress.percent) {
-                    console.log(`Processing: ${progress.percent.toFixed(2)}% done`);
-                }
-            })
-            .on('error', (err) => {
-                console.error('Error occurred: ' + err.message);
-                reject(err);
-            })
-            .on('end', () => {
-                console.log('[Nuvio] Stream successfully pulled!');
-                resolve();
-            })
-            .run();
+async function getStream(animeUrl) {
+    console.log(`[Nuvio] Launching browser for: ${animeUrl}`);
+    
+    const browser = await puppeteer.launch({ 
+        headless: "new",
+        args: ['--no-sandbox', '--disable-setuid-sandbox'] 
     });
+
+    const page = await browser.newPage();
+
+    // 1. Set a realistic User-Agent
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36');
+
+    let streamUrl = null;
+
+    // 2. Intercept Network Requests to find the .m3u8
+    await page.setRequestInterception(true);
+    page.on('request', request => {
+        const url = request.url();
+        if (url.includes('.m3u8') || url.includes('uwu.m3u8')) {
+            streamUrl = url;
+            console.log('[Nuvio] Found Stream Link:', streamUrl);
+        }
+        request.continue();
+    });
+
+    try {
+        // 3. Navigate to the page
+        await page.goto(animeUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+
+        // 4. If the page has a "Play" button or a redirect, we might need to click it
+        // Note: AnimePahe often has a "redirect" page. 
+        // We wait a few seconds for the player to initialize.
+        await new Promise(r => setTimeout(r, 5000));
+
+        if (!streamUrl) {
+            console.log("[Nuvio] Stream not found automatically. Trying to click play...");
+            // Force a click on the video container if needed
+            await page.click('#player_over'); 
+            await new Promise(r => setTimeout(r, 3000));
+        }
+
+    } catch (err) {
+        console.error('[Nuvio] Error navigating:', err.message);
+    } finally {
+        await browser.close();
+    }
+
+    return streamUrl;
 }
 
-// --- Execution ---
-const targetUrl = 'https://vault-99.owocdn.top/stream/99/02/d18c35ee162a888eae0317437c2ea869457884823caec2b42e47218c33e5148a/uwu.m3u8';
+// --- Usage ---
+// Use an actual AnimePahe episode page here, not the CDN link.
+const episodePage = 'https://animepahe.si/play/your-episode-slug-here';
 
-getStream(targetUrl, 'anime_episode.mp4');
+getStream(episodePage).then(url => {
+    if(url) {
+        console.log('SUCCESS: You can now pass this to FFmpeg:', url);
+    } else {
+        console.log('FAILED: Could not intercept the stream.');
+    }
+});
