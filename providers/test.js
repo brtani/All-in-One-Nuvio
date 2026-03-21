@@ -117,7 +117,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         // 1. Página inicial
         let pageUrl;
         if (mediaType === 'movie') {
-            pageUrl = `${BASE_URL}/film/${tmdbId}`;
+            pageUrl = `${BASE_URL}/filme/${tmdbId}`;
         } else {
             pageUrl = `${BASE_URL}/serie/${tmdbId}/${targetSeason}/${targetEpisode}`;
         }
@@ -158,7 +158,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         
         let vidsrcUrl;
         if (mediaType === 'movie') {
-            // Films: usar IMDB ID
+            // Filmes: usar IMDB ID
             const imdbId = await getImdbIdFromTmdb(tmdbId, mediaType);
             if (imdbId) {
                 vidsrcUrl = `https://vidsrc-embed.ru/embed/${imdbId}`;
@@ -384,7 +384,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
         
         const optionsParams = new URLSearchParams();
         optionsParams.append('contentid', contentId);
-        optionsParams.append('type', mediaType === 'movie' ? 'film' : 'serie');
+        optionsParams.append('type', mediaType === 'movie' ? 'filme' : 'serie');
         optionsParams.append('_token', SESSION_DATA.csrfToken);
         optionsParams.append('page_token', SESSION_DATA.pageToken);
         optionsParams.append('pageToken', SESSION_DATA.pageToken);
@@ -510,7 +510,7 @@ async function getStreams(tmdbId, mediaType, season, episode) {
             
             let title;
             if (mediaType === 'movie') {
-                title = `Film ${tmdbId}`;
+                title = `Filme ${tmdbId}`;
             } else {
                 title = `S${targetSeason.toString().padStart(2, '0')}E${targetEpisode.toString().padStart(2, '0')}`;
             }
