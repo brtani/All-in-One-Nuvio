@@ -76,7 +76,7 @@
       "filename": "providers/hindmoviez.js",
       "enabled": true,
       "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "http://hindmovie.ltd/favicon.ico",
+      "logo": "https://raw.githubusercontent.com/phisher98/TVVVV/refs/heads/main/Icons/hindmoviez.png",
       "contentLanguage": ["en", "hi"]
     },
     {
