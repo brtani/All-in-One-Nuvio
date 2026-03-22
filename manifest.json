@@ -224,6 +224,19 @@
       "contentLanguage": ["en", "hi", "ta"]
     },
     {
+      "id": "movix",
+      "name": "Movix VF",
+      "description": "Movies and TV series in English & French (dubbed/subtitled)",
+      "version": "1.0.0",
+      "author": "wooodyhood",
+      "supportedTypes": ["movie"],
+      "filename": "providers/movix.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"],
+      "logo": "https://i.postimg.cc/XYrPQm87/movix.png",
+      "contentLanguage": ["en", "fr"]
+    },
+    {
       "id": "netmirror",
       "name": "Netmirror",
       "description": "Streaming links from Netmirror (Netflix, Prime, Disney etc).",
