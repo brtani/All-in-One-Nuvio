@@ -1,15 +1,15 @@
 /**
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║                       HindMoviez — Nuvio Stream Plugin                      ║
+ * ║                       HindMoviez — Nuvio Stream Plugin                       ║
  * ╠══════════════════════════════════════════════════════════════════════════════╣
- * ║  Source     › https://hindmovie.ltd                                         ║
- * ║  Author     › Sanchit  |  TG: @S4NCHITT                                     ║
+ * ║  Source     › https://hindmovie.ltd                                          ║
+ * ║  Author     › Sanchit  |  TG: @S4NCHITT                                      ║
  * ║  Project    › Murph's Streams                                                ║
- * ║  Manifest   › https://badboysxs-morpheus.hf.space/manifest.json             ║
+ * ║  Manifest   › https://badboysxs-morpheus.hf.space/manifest.json              ║
  * ╠══════════════════════════════════════════════════════════════════════════════╣
- * ║  Supports   › Movies & Series  (480p / 720p / 1080p / 4K)                   ║
- * ║  Chain      › mvlink.site → hshare.ink → hcloud → Servers                   ║
- * ║  Info       › Quality + Language parsed from page headings                  ║
+ * ║  Supports   › Movies & Series  (480p / 720p / 1080p / 4K)                    ║
+ * ║  Chain      › mvlink.site → hshare.ink → hcloud → Servers                    ║
+ * ║  Info       › Quality + Language parsed from page headings                   ║
  * ║  Parallel   › All links resolved concurrently                                ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
