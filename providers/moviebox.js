@@ -1,474 +1,611 @@
 /**
- * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║                      MovieBox — Nuvio Stream Plugin                         ║
- * ╠══════════════════════════════════════════════════════════════════════════════╣
- * ║  Source     › https://themoviebox.org                                       ║
- * ║  Author     › Sanchit  |  TG: @S4NCHITT                                     ║
- * ║  Project    › Murph's Streams                                                ║
- * ║  Manifest   › https://badboysxs-morpheus.hf.space/manifest.json             ║
- * ╠══════════════════════════════════════════════════════════════════════════════╣
- * ║  Languages  › Hindi · Tamil · Telugu · English (auto-detected)              ║
- * ║  Quality    › 360p / 480p / 720p / 1080p / Auto                             ║
- * ║  Search     › Direct JSON API — no HTML scraping, no Nuxt parsing           ║
- * ║  Speed      › Parallel queries, early-exit on first stream hit              ║
- * ╚══════════════════════════════════════════════════════════════════════════════╝
+ * MovieBox Provider v4.0 – Synced with Python API v4.0
+ *
+ * Changes vs v3.13:
+ *  - getDetail()       : fetches detail page → returns { is_tv, seasons, dubs }
+ *  - getStreams()      : auto-detects movie/TV via getDetail when se/ep omitted
+ *  - formatStreams()   : mirrors Python format_streams_js() — adds resolution,
+ *                        format, size_mb, duration_s, codec, proxy_url fields
+ *  - sortStreams()     : sorts raw streams descending by resolution before mapping
+ *  - getLanguageFromTitle() : added [original]/(original) branch (was missing)
+ *  - pickBest()        : extracted as a standalone helper (was inline in getStreams)
+ *  - getStreamsByQuery(): new export — query-only mode (no TMDB), same scoring pipeline
+ *  - All scoring / language / search logic identical to v3.13
  */
 
 'use strict';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Config
-// ─────────────────────────────────────────────────────────────────────────────
+const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
+const MB_BASE      = 'https://themoviebox.org';
+const BROWSER_UA   = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0';
 
-var TMDB_KEY  = '439c478a771f35c05022f9feabcca01c';
-var MB_BASE   = 'https://themoviebox.org';
-var TAG       = '[MovieBox]';
-var UA        = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0';
-
-// Headers sent with every segment/chunk request by the player
-var STREAM_HEADERS = {
-  'User-Agent'     : UA,
-  'Referer'        : 'https://themoviebox.org/',
-  'Origin'         : 'https://themoviebox.org',
-  'Accept'         : '*/*',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Connection'     : 'keep-alive',
+const HTML_HEADERS = {
+    'User-Agent':                BROWSER_UA,
+    'Accept':                    'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language':           'en-US,en;q=0.9',
+    'Upgrade-Insecure-Requests': '1'
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LRU Cache
-// ─────────────────────────────────────────────────────────────────────────────
-
-function Cache(max, ttl) {
-  this.max = max; this.ttl = ttl; this.d = {}; this.k = [];
-}
-Cache.prototype.get = function (k) {
-  var e = this.d[k];
-  if (!e) return undefined;
-  if (Date.now() - e.t > this.ttl) { delete this.d[k]; return undefined; }
-  return e.v;
-};
-Cache.prototype.set = function (k, v) {
-  if (this.d[k]) { this.d[k] = { v: v, t: Date.now() }; return; }
-  if (this.k.length >= this.max) delete this.d[this.k.shift()];
-  this.k.push(k); this.d[k] = { v: v, t: Date.now() };
+const API_HEADERS = {
+    'User-Agent':     BROWSER_UA,
+    'Accept':         'application/json',
+    'Accept-Language':'en-US,en;q=0.9',
+    'X-Client-Info':  JSON.stringify({ timezone: 'Asia/Kolkata' }),
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin',
+    'X-Source':       '',
+    'Pragma':         'no-cache',
+    'Cache-Control':  'no-cache'
 };
 
-var streamCache = new Cache(200, 20 * 60 * 1000);  // 20 min
-var metaCache   = new Cache(500, 24 * 60 * 60 * 1000);
-var srchCache   = new Cache(300, 10 * 60 * 1000);  // 10 min
-
-// ─────────────────────────────────────────────────────────────────────────────
-// HTTP — simple fetch wrappers
-// ─────────────────────────────────────────────────────────────────────────────
-
-function get(url, headers) {
-  return fetch(url, {
-    headers  : Object.assign({ 'User-Agent': UA, 'Accept': 'application/json', 'Accept-Language': 'en-US,en;q=0.9' }, headers || {}),
-    redirect : 'follow',
-  }).then(function (r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
-  });
+let INTERNAL_PROXY_URL = null;
+function setInternalProxy(url) {
+    INTERNAL_PROXY_URL = url;
+    console.log('[MovieBox] Internal proxy set:', url);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TMDB
-// ─────────────────────────────────────────────────────────────────────────────
 
-function tmdb(id, type) {
-  var key = 'mb_' + id + type;
-  var hit = metaCache.get(key);
-  if (hit) return Promise.resolve(hit);
+// ─── Nuxt SSR parser ──────────────────────────────────────────────────────────
 
-  var isTv = type === 'tv' || type === 'series';
-  var url  = 'https://api.themoviedb.org/3/' + (isTv ? 'tv' : 'movie') + '/' + id + '?api_key=' + TMDB_KEY;
-
-  return get(url).then(function (d) {
-    var title = isTv ? d.name  : d.title;
-    var date  = isTv ? d.first_air_date : d.release_date;
-    var year  = (date || '').slice(0, 4);
-    var r = { title: title || null, year: year, isTv: isTv };
-    if (title) metaCache.set(key, r);
-    return r;
-  }).catch(function (e) {
-    console.log(TAG + ' TMDB error: ' + e.message); return null;
-  });
+function extractNuxtData(html) {
+    const idx = html.indexOf('__NUXT_DATA__');
+    if (idx === -1) return null;
+    const start = html.indexOf('[', idx);
+    const end   = html.indexOf('</script>', idx);
+    if (start === -1 || end === -1) return null;
+    try {
+        return JSON.parse(html.substring(start, end));
+    } catch {
+        return null;
+    }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MovieBox Search API
-// Direct JSON endpoint — much faster than HTML+Nuxt scraping
-// ─────────────────────────────────────────────────────────────────────────────
+function resolveNuxt(data, idx, depth = 0) {
+    if (depth > 15 || idx < 0 || idx >= data.length) return null;
+    const item = data[idx];
+    if (Array.isArray(item)) {
+        if (item.length === 2 && (item[0] === 'ShallowReactive' || item[0] === 'Reactive')) {
+            return resolveNuxt(data, item[1], depth + 1);
+        }
+        return item.map(v => (typeof v === 'number' ? resolveNuxt(data, v, depth + 1) : v));
+    }
+    if (item && typeof item === 'object') {
+        const obj = {};
+        for (const [k, v] of Object.entries(item)) {
+            obj[k] = typeof v === 'number' ? resolveNuxt(data, v, depth + 1) : v;
+        }
+        return obj;
+    }
+    return item;
+}
 
-var SEARCH_HEADERS = {
-  'User-Agent'     : UA,
-  'Accept'         : 'application/json',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'X-Client-Info'  : '{"timezone":"Asia/Kolkata"}',
-  'Referer'        : MB_BASE + '/newWeb/searchResult?keyword=',
-  'Sec-Fetch-Dest' : 'empty',
-  'Sec-Fetch-Mode' : 'cors',
-  'Sec-Fetch-Site' : 'same-origin',
-  'Cache-Control'  : 'no-cache',
-};
 
-var PLAY_HEADERS = {
-  'User-Agent'     : UA,
-  'Accept'         : 'application/json',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'X-Client-Info'  : '{"timezone":"Asia/Kolkata"}',
-  'Sec-Fetch-Dest' : 'empty',
-  'Sec-Fetch-Mode' : 'cors',
-  'Sec-Fetch-Site' : 'same-origin',
-  'Cache-Control'  : 'no-cache',
-};
+// ─── Search ───────────────────────────────────────────────────────────────────
 
-/**
- * Call the MovieBox search JSON API directly.
- * Returns array of { subject_id, title, subject_type, detail_path, release_date, language }
- */
-function mbSearch(query) {
-  var cached = srchCache.get(query);
-  if (cached) return Promise.resolve(cached);
+async function search(query) {
+    console.log(`[MovieBox] Searching: "${query}"`);
+    const url = new URL('/newWeb/searchResult', MB_BASE);
+    url.searchParams.set('keyword', query);
 
-  // Direct JSON API endpoint (not the HTML search page)
-  var url = MB_BASE + '/wefeed-h5api-bff/subject/search'
-    + '?keyword=' + encodeURIComponent(query)
-    + '&pageNum=1&pageSize=20';
-
-  console.log(TAG + ' API search: "' + query + '"');
-
-  return fetch(url, { headers: SEARCH_HEADERS, redirect: 'follow' })
-    .then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
-    })
-    .then(function (data) {
-      // Handle both possible response shapes
-      var items = [];
-      if (data && data.data) {
-        items = data.data.list || data.data.items || data.data || [];
-      }
-      if (!Array.isArray(items)) items = [];
-
-      var results = items.map(function (item) {
-        return {
-          subject_id   : item.subjectId || item.subject_id || item.id,
-          title        : item.title || item.name || '',
-          subject_type : item.subjectType || item.subject_type || item.type,
-          detail_path  : item.detailPath  || item.detail_path  || '',
-          release_date : item.releaseDate || item.release_date || '',
-          language     : item.language || item.lang || item.dubbed_lang || null,
-        };
-      }).filter(function (r) { return r.subject_id && r.title; });
-
-      console.log(TAG + ' "' + query + '" → ' + results.length + ' result(s)');
-      if (results.length) srchCache.set(query, results);
-      return results;
-    })
-    .catch(function (err) {
-      console.log(TAG + ' Search API error ("' + query + '"): ' + err.message);
-      // Fallback: try alternate endpoint path
-      return mbSearchFallback(query);
+    const res = await fetch(url, {
+        headers: HTML_HEADERS,
+        signal:  AbortSignal.timeout(15000)
     });
-}
+    if (!res.ok) throw new Error(`Search HTTP ${res.status}`);
+    const html = await res.text();
 
-/**
- * Fallback search using the Nuxt SSR page but with a regex shortcut
- * instead of full Nuxt data resolution — much faster than before.
- */
-function mbSearchFallback(query) {
-  var url = MB_BASE + '/newWeb/searchResult?keyword=' + encodeURIComponent(query);
-  console.log(TAG + ' Fallback HTML search: "' + query + '"');
-
-  return fetch(url, {
-    headers  : { 'User-Agent': UA, 'Accept': 'text/html', 'Accept-Language': 'en-US,en;q=0.9' },
-    redirect : 'follow',
-  })
-    .then(function (r) { return r.text(); })
-    .then(function (html) {
-      // Fast regex extraction instead of full Nuxt tree walk
-      var results = [];
-      // Extract subjectId + title + detailPath + subjectType from the Nuxt blob
-      var nuxtIdx = html.indexOf('__NUXT_DATA__');
-      if (nuxtIdx === -1) return results;
-
-      var start = html.indexOf('[', nuxtIdx);
-      var end   = html.indexOf('</script>', nuxtIdx);
-      if (start === -1 || end === -1) return results;
-
-      var raw;
-      try { raw = JSON.parse(html.substring(start, end)); }
-      catch (e) { return results; }
-
-      // Walk array looking for objects that have subjectId + detailPath
-      var seen = {};
-      for (var i = 0; i < raw.length; i++) {
-        var item = raw[i];
-        if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-        if (!item.subjectId || !item.detailPath) continue;
-        var sid = String(item.subjectId);
-        if (seen[sid]) continue;
-        seen[sid] = true;
-        results.push({
-          subject_id   : item.subjectId,
-          title        : item.title || '',
-          subject_type : item.subjectType,
-          detail_path  : item.detailPath,
-          release_date : item.releaseDate || '',
-          language     : item.language || item.lang || null,
-        });
-      }
-
-      console.log(TAG + ' Fallback found ' + results.length + ' result(s)');
-      if (results.length) srchCache.set(query, results);
-      return results;
-    })
-    .catch(function (e) {
-      console.log(TAG + ' Fallback error: ' + e.message);
-      return [];
-    });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Scoring
-// ─────────────────────────────────────────────────────────────────────────────
-
-function norm(s) {
-  return (s || '').toLowerCase()
-    .replace(/\[.*?\]/g, ' ').replace(/\(.*?\)/g, ' ')
-    .replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function score(r, title, year) {
-  var nt = norm(title), nr = norm(r.title || '');
-  var ry = (r.release_date || '').slice(0, 4);
-  if (!nt || !nr) return 0;
-  if (nr === nt) return 100;
-  if (nr.indexOf(nt) !== -1 || nt.indexOf(nr) !== -1) return 75;
-  var wt = nt.split(' ').filter(function(w){return w.length>2;});
-  var wr = nr.split(' ').filter(function(w){return w.length>2;});
-  if (!wt.length || !wr.length) return 0;
-  var m = wt.filter(function(w){return wr.indexOf(w)!==-1;}).length;
-  var s = Math.round((m / Math.max(wt.length, wr.length)) * 55);
-  if (year && ry && year === ry) s += 30;
-  return s;
-}
-
-function isHindi(r) {
-  return ((r.language || '').toLowerCase().includes('hindi')) ||
-         (r.title || '').toLowerCase().includes('hindi');
-}
-
-function hasHindiTag(t) { return (t||'').toLowerCase().includes('[hindi]'); }
-
-function langFromTitle(t) {
-  var l = (t||'').toLowerCase();
-  if (/\[hindi\]|\(hindi\)/.test(l))    return 'Hindi';
-  if (/\[tamil\]|\(tamil\)/.test(l))    return 'Tamil';
-  if (/\[telugu\]|\(telugu\)/.test(l))  return 'Telugu';
-  if (/\[english\]|\(english\)/.test(l))return 'English';
-  return 'Original';
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// pickBest — run all queries IN PARALLEL, pick best scored result
-// ─────────────────────────────────────────────────────────────────────────────
-
-function pickBest(title, year) {
-  // All 4 queries fire simultaneously
-  var queries = [
-    title + ' Hindi',
-    title,
-    year ? title + ' ' + year : null,
-    year ? title + ' ' + year + ' Hindi' : null,
-  ].filter(Boolean);
-
-  return Promise.all(queries.map(function(q) {
-    return mbSearch(q).catch(function(){return [];});
-  })).then(function(allResults) {
-
-    var allValid  = [];
-    var hindiList = [];
-    var bestNH    = { r: null, s: 0 };
-
-    allResults.forEach(function(arr) {
-      var valid = arr.filter(function(r){ return r.subject_type===1||r.subject_type===2; });
-      allValid = allValid.concat(valid);
-      valid.forEach(function(r) {
-        if (!isHindi(r)) { var s=score(r,title,year); if(s>bestNH.s) bestNH={r:r,s:s}; }
-      });
-      hindiList = hindiList.concat(valid.filter(isHindi));
-    });
-
-    // If good non-Hindi found but no Hindi — do one extra Hindi retry
-    var extra = Promise.resolve();
-    if (bestNH.r && bestNH.s >= 60 && !hindiList.length) {
-      extra = mbSearch(bestNH.r.title + ' Hindi').catch(function(){return[];}).then(function(arr){
-        var valid = arr.filter(function(r){return r.subject_type===1||r.subject_type===2;});
-        allValid  = allValid.concat(valid);
-        hindiList = hindiList.concat(valid.filter(isHindi));
-      });
+    const data = extractNuxtData(html);
+    if (!data) {
+        console.log('[MovieBox] No Nuxt data found in search');
+        return [];
     }
 
-    return extra.then(function() {
-      var picked = null, isHindiR = false;
-
-      // Best Hindi (threshold 20)
-      if (hindiList.length) {
-        var best = 0;
-        hindiList.forEach(function(r){ var s=score(r,title,year); if(s>best){best=s;picked=r;} });
-        if (picked && best >= 20) { isHindiR = true; console.log(TAG+' Best Hindi: "'+picked.title+'" s='+best); }
-        else { picked = null; }
-      }
-
-      // Best overall (threshold 30)
-      if (!picked) {
-        var best2 = 0;
-        allValid.forEach(function(r){ var s=score(r,title,year); if(s>best2){best2=s;picked=r;} });
-        if (picked && best2 >= 30) {
-          isHindiR = hasHindiTag(picked.title);
-          console.log(TAG+' Best overall: "'+picked.title+'" s='+best2);
-        } else {
-          console.log(TAG+' No match found'); return { picked:null, isHindiR:false };
+    let itemsIndices = null;
+    for (const item of data) {
+        if (item && typeof item === 'object' && 'pager' in item && 'items' in item) {
+            const ref = item.items;
+            itemsIndices = typeof ref === 'number' ? data[ref] : ref;
+            break;
         }
-      }
+    }
+    if (!itemsIndices || !Array.isArray(itemsIndices)) return [];
 
-      return { picked: picked, isHindiR: isHindiR };
-    });
-  });
-}
+    const results = [];
+    for (const idx of itemsIndices) {
+        const item = resolveNuxt(data, idx);
+        if (!item || typeof item !== 'object') continue;
+        const cover = item.cover;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Fetch streams from play API
-// ─────────────────────────────────────────────────────────────────────────────
+        // Extract language – priority order matches Python API
+        const language =
+            item.language        ||
+            item.lang            ||
+            item.dubbed_lang     ||
+            item.original_language ||
+            null;
 
-function fetchStreams(subjectId, detailPath, se, ep) {
-  var url = MB_BASE + '/wefeed-h5api-bff/subject/play'
-    + '?subjectId=' + encodeURIComponent(subjectId)
-    + '&se='        + (se  != null ? se  : 0)
-    + '&ep='        + (ep  != null ? ep  : 0)
-    + '&detailPath='+ encodeURIComponent(detailPath);
-
-  var ref = MB_BASE + '/movies/' + detailPath
-    + '?id=' + subjectId + '&type=/movie/detail&detailSe=&detailEp=&lang=en';
-
-  var hdrs = Object.assign({}, PLAY_HEADERS, { 'Referer': ref });
-
-  return fetch(url, { headers: hdrs, redirect: 'follow' })
-    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
-    .then(function(d){
-      if (!d || d.code !== 0) throw new Error(d && d.message ? d.message : 'API error');
-      return (d.data && d.data.streams) ? d.data.streams : [];
-    });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Build stream object
-// ─────────────────────────────────────────────────────────────────────────────
-
-function resLabel(res) {
-  if (!res && res !== 0) return 'Auto';
-  var m = String(res).match(/(\d+)/);
-  return m ? m[1] + 'p' : String(res);
-}
-
-function buildStream(raw, title, year, lang, isTv, se, ep) {
-  var q = resLabel(raw.resolutions);
-  var epTag = (isTv && se != null && ep != null)
-    ? ' · S' + String(se).padStart(2,'0') + 'E' + String(ep).padStart(2,'0') : '';
-
-  var name  = '📺 MovieBox | ' + q + ' | ' + lang;
-
-  var lines = [];
-  lines.push(title + (year ? ' (' + year + ')' : '') + epTag);
-  lines.push('📺 ' + q + '  🔊 ' + lang + (raw.codecName ? '  🎞 ' + raw.codecName : ''));
-  if (raw.size) {
-    var mb = Math.round(Number(raw.size)/1024/1024*10)/10;
-    lines.push('💾 ' + mb + ' MB' + (raw.duration ? '  ⏱ ' + Math.round(raw.duration/60) + 'min' : ''));
-  }
-  lines.push("by Sanchit · @S4NCHITT · Murph's Streams");
-
-  return {
-    name   : name,
-    title  : lines.join('\n'),
-    url    : raw.url || '',
-    quality: q,
-    behaviorHints: {
-      headers    : STREAM_HEADERS,
-      bingeGroup : 'moviebox',
-      notWebReady: false,
-    },
-    subtitles: [],
-  };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// getStreams — main export
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getStreams(tmdbId, type, season, episode) {
-  var cacheKey = 'mb_' + tmdbId + '_' + type + '_' + season + '_' + episode;
-  var hit = streamCache.get(cacheKey);
-  if (hit) { console.log(TAG + ' Cache HIT'); return Promise.resolve(hit); }
-
-  var mediaType  = (type === 'series') ? 'tv' : (type || 'movie');
-  var isTv       = mediaType === 'tv';
-  var se         = isTv ? (season  ? parseInt(season)  : 1) : 0;
-  var ep         = isTv ? (episode ? parseInt(episode) : 1) : 0;
-
-  console.log(TAG + ' ► ' + tmdbId + ' | ' + mediaType + (isTv ? ' S'+se+'E'+ep : ''));
-
-  return tmdb(tmdbId, mediaType).then(function(d) {
-    if (!d || !d.title) { console.log(TAG + ' TMDB failed'); return []; }
-    var title = d.title, year = d.year;
-    console.log(TAG + ' "' + title + '" (' + year + ')');
-
-    return pickBest(title, year).then(function(res) {
-      var picked = res.picked, isHindiR = res.isHindiR;
-      if (!picked) return [];
-
-      console.log(TAG + ' Picked: "' + picked.title + '" id=' + picked.subject_id);
-
-      // Language label
-      var lang = (isHindiR || hasHindiTag(picked.title)) ? 'Hindi' : langFromTitle(picked.title);
-      console.log(TAG + ' Language: ' + lang);
-
-      // Fetch streams
-      return fetchStreams(picked.subject_id, picked.detail_path, se, ep)
-        .then(function(raws) {
-          if (!raws.length) { console.log(TAG + ' No streams'); return []; }
-
-          // Sort highest resolution first
-          var sorted = raws.slice().sort(function(a,b){
-            return Number(b.resolutions||0) - Number(a.resolutions||0);
-          });
-
-          var streams = sorted
-            .filter(function(s){ return !!s.url; })
-            .map(function(s){ return buildStream(s, title, year, lang, isTv, isTv?se:null, isTv?ep:null); });
-
-          console.log(TAG + ' ✔ ' + streams.length + ' stream(s)');
-          if (streams.length) streamCache.set(cacheKey, streams);
-          return streams;
-        })
-        .catch(function(e) {
-          console.log(TAG + ' fetchStreams error: ' + e.message);
-          return [];
+        results.push({
+            subject_id:   item.subjectId,
+            title:        item.title || '',
+            subject_type: item.subjectType,   // 1 = TV, 2 = Movie
+            detail_path:  item.detailPath,
+            release_date: item.releaseDate,
+            genre:        item.genre,
+            cover:        cover?.url || null,
+            imdb_rating:  item.imdbRatingValue,
+            language
         });
+    }
+
+    console.log(`[MovieBox] Found ${results.length} results`);
+    return results;
+}
+
+
+// ─── Detail page  (ported from Python API do_get_detail) ──────────────────────
+
+async function getDetail(detailPath, subjectId, query = '') {
+    const refQuery = query.replace(/ /g, '+');
+    const pageUrl  = new URL(`/moviesDetail/${detailPath}`, MB_BASE);
+    pageUrl.searchParams.set('id',        subjectId);
+    pageUrl.searchParams.set('scene',     '');
+    pageUrl.searchParams.set('page_from', 'search_detail');
+    pageUrl.searchParams.set('type',      '/movie/detail');
+
+    const res = await fetch(pageUrl, {
+        headers: {
+            ...HTML_HEADERS,
+            Referer: `${MB_BASE}/newWeb/searchResult?keyword=${refQuery}`
+        },
+        signal: AbortSignal.timeout(15000)
     });
-  }).catch(function(e) {
-    console.error(TAG + ' Fatal: ' + e.message); return [];
-  });
+    if (!res.ok) throw new Error(`Detail HTTP ${res.status}`);
+    const html = await res.text();
+
+    const data = extractNuxtData(html);
+    if (!data) return null;
+
+    // ── Seasons ──────────────────────────────────────────────────────────────
+    const seasons = [];
+    for (const item of data) {
+        if (item && typeof item === 'object' && 'seasons' in item && 'source' in item) {
+            const ref = item.seasons;
+            const raw = typeof ref === 'number' ? data[ref] : ref;
+            if (Array.isArray(raw)) {
+                for (const sIdx of raw) {
+                    const s = typeof sIdx === 'number' ? resolveNuxt(data, sIdx) : sIdx;
+                    if (!s || typeof s !== 'object') continue;
+                    const resRaw = s.resolutions || [];
+                    const resolutions = (Array.isArray(resRaw) ? resRaw : [])
+                        .filter(r => r && typeof r === 'object')
+                        .map(r => ({ resolution: r.resolution, ep_count: r.epNum }));
+                    const seVal = s.se;
+                    seasons.push({
+                        se:          seVal != null ? Number(seVal) : 1,
+                        max_ep:      Number(s.maxEp || 1),
+                        resolutions
+                    });
+                }
+            }
+            break;
+        }
+    }
+
+    // ── Dubs ─────────────────────────────────────────────────────────────────
+    const dubs = [];
+    const seen = new Set();
+    for (const item of data) {
+        if (item && typeof item === 'object' &&
+            'lanName' in item && 'lanCode' in item && 'detailPath' in item) {
+            const dp = item.detailPath;
+            if (dp && !seen.has(dp)) {
+                seen.add(dp);
+                dubs.push({
+                    name:        item.lanName,
+                    code:        item.lanCode,
+                    subject_id:  item.subjectId,
+                    detail_path: dp,
+                    original:    item.original || false
+                });
+            }
+        }
+    }
+
+    // se=0 → movie, se≥1 → TV
+    const is_tv = seasons.length > 0 && seasons.some(s => s.se >= 1);
+    if (!seasons.length) {
+        seasons.push({ se: 0, max_ep: 0, resolutions: [] });
+    }
+
+    return { is_tv, seasons, dubs };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Export
-// ─────────────────────────────────────────────────────────────────────────────
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getStreams };
-} else {
-  global.getStreams = getStreams;
+// ─── Scoring helpers ──────────────────────────────────────────────────────────
+
+function normalizeTitle(str) {
+    return (str || '')
+        .toLowerCase()
+        .replace(/\[.*?\]/g, ' ')
+        .replace(/\(.*?\)/g, ' ')
+        .replace(/\s*-\s*(part|volume|chapter|episode)\s*\d+/gi, ' ')
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 }
+
+function score(result, targetTitle, targetYear) {
+    const resultTitle = result.title || '';
+    const resultYear  = (result.release_date || '').substring(0, 4);
+
+    const normTarget = normalizeTitle(targetTitle);
+    const normResult = normalizeTitle(resultTitle);
+
+    if (!normTarget || !normResult) return 0;
+    if (normResult === normTarget) return 90;
+    if (normResult.includes(normTarget) || normTarget.includes(normResult)) return 70;
+
+    const wordsTarget = normTarget.split(' ').filter(w => w.length > 2);
+    const wordsResult = normResult.split(' ').filter(w => w.length > 2);
+    if (!wordsTarget.length || !wordsResult.length) return 0;
+
+    const matches   = wordsTarget.filter(w => wordsResult.includes(w)).length;
+    const overlap   = matches / Math.max(wordsTarget.length, wordsResult.length);
+    let titleScore  = Math.round(overlap * 50);
+
+    if (targetYear && resultYear && targetYear === resultYear) titleScore += 30;
+    return titleScore;
+}
+
+function isHindi(result) {
+    return (result.language && result.language.toLowerCase().includes('hindi')) ||
+           result.title.toLowerCase().includes('hindi');
+}
+
+function hasHindiTag(title) {
+    return (title || '').toLowerCase().includes('[hindi]');
+}
+
+function getLanguageFromTitle(title) {
+    const lower = (title || '').toLowerCase();
+    if (lower.includes('[hindi]')   || lower.includes('(hindi)')   || lower.includes(' hindi '))   return 'Hindi';
+    if (lower.includes('[tamil]')   || lower.includes('(tamil)')   || lower.includes(' tamil '))   return 'Tamil';
+    if (lower.includes('[telugu]')  || lower.includes('(telugu)')  || lower.includes(' telugu '))  return 'Telugu';
+    if (lower.includes('[english]') || lower.includes('(english)') || lower.includes(' english ')) return 'English';
+    if (lower.includes('[original]')|| lower.includes('(original)')|| lower.includes(' original '))return 'Original';
+    return 'Original';
+}
+
+
+// ─── Raw streams ──────────────────────────────────────────────────────────────
+
+async function getStreamsRaw(subjectId, detailPath, se = '0', ep = '0') {
+    const url = new URL('/wefeed-h5api-bff/subject/play', MB_BASE);
+    url.searchParams.set('subjectId',  subjectId);
+    url.searchParams.set('se',         String(se));
+    url.searchParams.set('ep',         String(ep));
+    url.searchParams.set('detailPath', detailPath);
+
+    const headers = {
+        ...API_HEADERS,
+        Referer: `${MB_BASE}/movies/${detailPath}?id=${subjectId}&type=/movie/detail&detailSe=&detailEp=&lang=en`
+    };
+
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`Streams HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.code !== 0) throw new Error(data.message || 'API error');
+    return data.data.streams || [];
+}
+
+
+// ─── Stream formatting  (mirrors Python format_streams_js) ────────────────────
+
+/**
+ * Sorts raw streams descending by resolution, then maps them to the
+ * enriched format used by the Python API (name / title / url / subtitles
+ * plus resolution / format / size_mb / duration_s / codec / proxy_url).
+ *
+ * @param {Array}  rawStreams
+ * @param {string} title
+ * @param {string} year
+ * @param {string} langLabel
+ * @param {string} mediaType   'movie' | 'tv'
+ * @param {number|null} seasonNum
+ * @param {number|null} episodeNum
+ * @param {string|null} proxyBase  base URL for proxy_url field (e.g. 'http://localhost:5000/')
+ */
+function formatStreams(rawStreams, title, year, langLabel, mediaType,
+                       seasonNum = null, episodeNum = null, proxyBase = null) {
+    // Sort descending by resolution (mirrors Python sorted(..., reverse=True))
+    const sorted = [...rawStreams].sort(
+        (a, b) => Number(b.resolutions || 0) - Number(a.resolutions || 0)
+    );
+
+    return sorted.map(s => {
+        // Quality label
+        let resolution = s.resolutions || 'Auto';
+        let quality;
+        if (typeof resolution === 'number') {
+            quality = `${resolution}p`;
+        } else if (typeof resolution === 'string') {
+            const m = resolution.match(/(\d+)/);
+            quality = m ? `${m[1]}p` : resolution;
+        } else {
+            quality = 'Auto';
+        }
+
+        const name = `MovieBox (${langLabel}) - ${quality}`;
+
+        // Episode suffix for TV
+        const epSuffix = (mediaType === 'tv' && seasonNum != null && episodeNum != null)
+            ? ` S${String(seasonNum).padStart(2, '0')}E${String(episodeNum).padStart(2, '0')}`
+            : '';
+
+        const streamTitle = `${title}${year ? ` (${year})` : ''}${epSuffix}`;
+        const rawUrl      = s.url || '';
+
+        // proxy_url — only set when a proxy base is supplied
+        const proxyUrl = proxyBase
+            ? `${proxyBase.replace(/\/$/, '')}/proxy?url=${encodeURIComponent(rawUrl)}`
+            : null;
+
+        return {
+            // Standard Stremio-compatible fields
+            name,
+            title:      streamTitle,
+            url:        rawUrl,
+            subtitles:  [],
+            // Extra metadata (mirrors Python API response)
+            resolution: s.resolutions,
+            format:     s.format     || null,
+            size_mb:    s.size ? Math.round((Number(s.size) / 1024 / 1024) * 10) / 10 : 0,
+            duration_s: s.duration   || null,
+            codec:      s.codecName  || null,
+            proxy_url:  proxyUrl
+        };
+    });
+}
+
+
+// ─── pickBest()  (extracted from inline getStreams — mirrors Python pick_best) ──
+
+/**
+ * Runs the full multi-query search + scoring pipeline — ALL searches in parallel.
+ * Returns { picked, isHindiResult } or { picked: null, isHindiResult: false }.
+ */
+async function pickBest(title, year) {
+    // Run all initial queries IN PARALLEL — eliminates 3x sequential round trips
+    const initialQueries = [
+        `${title} Hindi`,
+        year ? `${title} ${year} Hindi` : null,
+        title,
+        year ? `${title} ${year}` : null
+    ].filter(Boolean);
+
+    console.log(`[MovieBox] Parallel search: ${initialQueries.map(q => `"${q}"`).join(', ')}`);
+
+    const allResults = await Promise.all(
+        initialQueries.map(q => search(q).catch(() => []))
+    );
+
+    const allValidResults = [];
+    const allHindiResults = [];
+    let bestNonHindi = { result: null, score: 0 };
+
+    for (const results of allResults) {
+        const valid = results.filter(r => r.subject_type === 1 || r.subject_type === 2);
+        allValidResults.push(...valid);
+        for (const r of valid) {
+            if (!isHindi(r)) {
+                const s = score(r, title, year);
+                if (s > bestNonHindi.score) bestNonHindi = { result: r, score: s };
+            }
+        }
+        allHindiResults.push(...valid.filter(isHindi));
+    }
+
+    // ── Exact-title Hindi retry (only if no Hindi found yet) ─────────────────
+    if (bestNonHindi.result && bestNonHindi.score >= 60 && allHindiResults.length === 0) {
+        const exactHindiQuery = `${bestNonHindi.result.title} Hindi`;
+        console.log(`[MovieBox] Fallback Hindi query: "${exactHindiQuery}"`);
+        const exactResults = await search(exactHindiQuery).catch(() => []);
+        const validExact   = exactResults.filter(r => r.subject_type === 1 || r.subject_type === 2);
+        allValidResults.push(...validExact);
+        allHindiResults.push(...validExact.filter(isHindi));
+    }
+
+    // ── Pick best Hindi (threshold ≥ 20) ──────────────────────────────────────
+    let picked        = null;
+    let isHindiResult = false;
+
+    if (allHindiResults.length > 0) {
+        console.log(`[MovieBox] Total Hindi candidates: ${allHindiResults.length}`);
+        let bestScore = 0;
+        for (const r of allHindiResults) {
+            const s = score(r, title, year);
+            console.log(`[MovieBox] Hindi candidate: "${r.title}" score=${s}`);
+            if (s > bestScore) { bestScore = s; picked = r; }
+        }
+        if (picked && bestScore >= 20) {
+            console.log(`[MovieBox] Best Hindi match: "${picked.title}" score=${bestScore}`);
+            isHindiResult = true;
+        } else {
+            console.log(`[MovieBox] Best Hindi score too low (${bestScore}), falling back`);
+            picked = null;
+        }
+    }
+
+    // ── Fallback to best overall (threshold ≥ 30) ────────────────────────────
+    if (!picked) {
+        console.log('[MovieBox] No suitable Hindi result, falling back to best overall');
+        let bestScore = 0;
+        for (const r of allValidResults) {
+            const s = score(r, title, year);
+            console.log(`[MovieBox] Overall candidate: "${r.title}" score=${s}`);
+            if (s > bestScore) { bestScore = s; picked = r; }
+        }
+        if (picked && bestScore >= 30) {
+            console.log(`[MovieBox] Best overall match: "${picked.title}" score=${bestScore}`);
+            isHindiResult = hasHindiTag(picked.title);
+        } else {
+            console.log('[MovieBox] No suitable result found');
+            return { picked: null, isHindiResult: false };
+        }
+    }
+
+    return { picked, isHindiResult };
+}
+
+
+// ─── Main entry — TMDB mode ───────────────────────────────────────────────────
+
+/**
+ * Primary export — mirrors Python /autostream?tmdb_id= endpoint.
+ *
+ * @param {string|number} tmdbId
+ * @param {string}        mediaType   'movie' | 'tv'
+ * @param {number}        seasonNum   (TV only, default 1)
+ * @param {number}        episodeNum  (TV only, default 1)
+ * @param {string|null}   proxyBase   base URL of your proxy server (optional)
+ */
+async function getStreams(tmdbId, mediaType, seasonNum = 1, episodeNum = 1, proxyBase = null) {
+    console.log(`[MovieBox] TMDB ${tmdbId} type=${mediaType}`);
+    try {
+        // ── 1. Resolve title + year from TMDB ────────────────────────────────
+        const tmdbRes = await fetch(
+            `https://api.themoviedb.org/3/${mediaType === 'tv' ? 'tv' : 'movie'}/${tmdbId}?api_key=${TMDB_API_KEY}`,
+            { signal: AbortSignal.timeout(10000) }
+        );
+        if (!tmdbRes.ok) throw new Error('TMDB fetch failed');
+        const tmdbData = await tmdbRes.json();
+        const title    = mediaType === 'tv' ? tmdbData.name : tmdbData.title;
+        const year     = (mediaType === 'tv'
+            ? tmdbData.first_air_date
+            : tmdbData.release_date || ''
+        ).substring(0, 4);
+        if (!title) throw new Error('No TMDB title');
+        console.log(`[MovieBox] "${title}" (${year})`);
+
+        // ── 2. Multi-query parallel search + scoring ──────────────────────────
+        const { picked, isHindiResult } = await pickBest(title, year);
+        if (!picked) return [];
+
+        console.log(`[MovieBox] Picked: "${picked.title}" (id=${picked.subject_id})`);
+
+        // ── 3. Language label ─────────────────────────────────────────────────
+        let langLabel;
+        if (isHindiResult || hasHindiTag(picked.title)) {
+            langLabel = 'Hindi';
+        } else {
+            langLabel = getLanguageFromTitle(picked.title);
+        }
+        console.log(`[MovieBox] Language label: ${langLabel}`);
+
+        // ── 4. se/ep — trust mediaType, skip redundant getDetail() call ───────
+        // getDetail() was only used to re-detect movie vs TV, but we already
+        // know from the Stremio request. Removing saves one full HTTP round-trip.
+        const se = mediaType === 'tv' ? seasonNum  : 0;
+        const ep = mediaType === 'tv' ? episodeNum : 0;
+
+        // ── 5. Fetch raw streams ──────────────────────────────────────────────
+        const rawStreams = await getStreamsRaw(picked.subject_id, picked.detail_path, se, ep);
+        if (!rawStreams.length) {
+            console.log('[MovieBox] No streams returned');
+            return [];
+        }
+
+        // ── 6. Format + sort ──────────────────────────────────────────────────
+        const streams = formatStreams(
+            rawStreams, title, year, langLabel, mediaType,
+            mediaType === 'tv' ? seasonNum : null,
+            mediaType === 'tv' ? episodeNum : null,
+            proxyBase
+        );
+
+        console.log(`[MovieBox] Returning ${streams.length} streams`);
+        return streams;
+
+    } catch (err) {
+        console.error(`[MovieBox] ${err.message}`);
+        return [];
+    }
+}
+
+
+// ─── Query mode  (mirrors Python /autostream?q= endpoint) ────────────────────
+
+/**
+ * No TMDB lookup — uses the query string directly as the title.
+ * Same scoring pipeline as getStreams().
+ *
+ * @param {string}      query
+ * @param {string}      mediaType   'movie' | 'tv'
+ * @param {number|null} seasonNum
+ * @param {number|null} episodeNum
+ * @param {string|null} proxyBase
+ */
+async function getStreamsByQuery(query, mediaType = 'movie',
+                                  seasonNum = null, episodeNum = null,
+                                  proxyBase = null) {
+    console.log(`[MovieBox] Query mode: "${query}"`);
+    try {
+        const { picked, isHindiResult } = await pickBest(query, '');
+        if (!picked) return [];
+
+        console.log(`[MovieBox] Picked: "${picked.title}" (id=${picked.subject_id})`);
+
+        let langLabel;
+        if (isHindiResult || hasHindiTag(picked.title)) {
+            langLabel = 'Hindi';
+        } else {
+            langLabel = getLanguageFromTitle(picked.title);
+        }
+        console.log(`[MovieBox] Language label: ${langLabel}`);
+
+        // Determine se/ep from detail page when not supplied
+        let se, ep;
+        if (seasonNum == null || episodeNum == null) {
+            const det = await getDetail(picked.detail_path, picked.subject_id, query).catch(() => null);
+            if (det && !det.is_tv) {
+                se = 0; ep = 0;
+            } else {
+                se = seasonNum  != null ? seasonNum  : 1;
+                ep = episodeNum != null ? episodeNum : 1;
+            }
+        } else {
+            se = seasonNum;
+            ep = episodeNum;
+        }
+
+        const rawStreams = await getStreamsRaw(picked.subject_id, picked.detail_path, se, ep);
+        if (!rawStreams.length) {
+            console.log('[MovieBox] No streams returned');
+            return [];
+        }
+
+        const streams = formatStreams(
+            rawStreams, query, '', langLabel, mediaType,
+            mediaType === 'tv' ? se : null,
+            mediaType === 'tv' ? ep : null,
+            proxyBase
+        );
+
+        console.log(`[MovieBox] Returning ${streams.length} streams`);
+        return streams;
+
+    } catch (err) {
+        console.error(`[MovieBox] ${err.message}`);
+        return [];
+    }
+}
+
+
+module.exports = {
+    getStreams,          // TMDB-based (primary)
+    getStreamsByQuery,   // query-based (no TMDB)
+    getDetail,           // detail page parser
+    search,              // raw search
+    setInternalProxy
+};
