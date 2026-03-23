@@ -1,15 +1,15 @@
 /**
  * ╔══════════════════════════════════════════════════════════════════════════════╗
- * ║                       HindMoviez — Nuvio Stream Plugin                       ║
+ * ║                       HindMoviez — Nuvio Stream Plugin                      ║
  * ╠══════════════════════════════════════════════════════════════════════════════╣
- * ║  Source     › https://hindmovie.ltd                                          ║
- * ║  Author     › Sanchit  |  TG: @S4NCHITT                                      ║
+ * ║  Source     › https://hindmovie.ltd                                         ║
+ * ║  Author     › Sanchit  |  TG: @S4NCHITT                                     ║
  * ║  Project    › Murph's Streams                                                ║
- * ║  Manifest   › https://badboysxs-morpheus.hf.space/manifest.json              ║
+ * ║  Manifest   › https://badboysxs-morpheus.hf.space/manifest.json             ║
  * ╠══════════════════════════════════════════════════════════════════════════════╣
- * ║  Supports   › Movies & Series  (480p / 720p / 1080p / 4K)                    ║
- * ║  Chain      › mvlink.site → hshare.ink → hcloud → Servers                    ║
- * ║  Info       › Quality + Language parsed from page headings                   ║
+ * ║  Supports   › Movies & Series  (480p / 720p / 1080p / 4K)                   ║
+ * ║  Chain      › mvlink.site → hshare.ink → hcloud → Servers                   ║
+ * ║  Info       › Quality + Language parsed from page headings                  ║
  * ║  Parallel   › All links resolved concurrently                                ║
  * ╚══════════════════════════════════════════════════════════════════════════════╝
  */
@@ -25,6 +25,19 @@ const cheerio = require('cheerio-without-node-native');
 const BASE_URL     = 'https://hindmovie.ltd';
 const TMDB_API_KEY = '439c478a771f35c05022f9feabcca01c';
 const PLUGIN_TAG   = '[HindMoviez]';
+
+// ── Cloudflare Worker proxy ────────────────────────────────────────────────────
+// Routes all stream URLs through CF edge for:
+//   • Range / 206 Partial Content  → seek works on Smart TV players
+//   • Edge cache at Cloudflare PoP  → faster on repeated requests
+//   • Correct Referer headers forwarded to CDN
+//   • HubCloud / FSL redirect chain resolved transparently
+const HM_WORKER = 'https://hindmoviez.s4nch1tt.workers.dev';
+
+function hmProxyUrl(rawUrl) {
+  if (!rawUrl) return rawUrl;
+  return HM_WORKER + '/hm/proxy?url=' + encodeURIComponent(rawUrl);
+}
 
 const DEFAULT_HEADERS = {
   'User-Agent'      : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -537,12 +550,16 @@ function getStreams(tmdbId, type, season, episode) {
                 if (info.size)               titleLines.push('💾 ' + info.size);
                 titleLines.push('by Sanchit · @S4NCHITT · Murph\'s Streams');
 
+                // Route through Cloudflare Worker for seek + edge cache + TV compatibility
+                var proxiedUrl = hmProxyUrl(url);
+
                 streams.push({
                   name  : streamName,
                   title : titleLines.join('\n'),
-                  url   : url,
+                  url   : proxiedUrl,
                   quality: info.quality || undefined,
                   behaviorHints: {
+                    notWebReady: false,
                     bingeGroup : 'hindmoviez-' + serverName.replace(/\s+/g, '-').toLowerCase(),
                   },
                 });
