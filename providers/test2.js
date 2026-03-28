@@ -1,258 +1,210 @@
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __defProps = Object.defineProperties;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getOwnPropSymbols = Object.getOwnPropertySymbols;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __propIsEnum = Object.prototype.propertyIsEnumerable;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __spreadValues = (a, b) => {
-  for (var prop in b || (b = {}))
-    if (__hasOwnProp.call(b, prop))
-      __defNormalProp(a, prop, b[prop]);
-  if (__getOwnPropSymbols)
-    for (var prop of __getOwnPropSymbols(b)) {
-      if (__propIsEnum.call(b, prop))
-        __defNormalProp(a, prop, b[prop]);
-    }
-  return a;
-};
-var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var __async = (__this, __arguments, generator) => {
-  return new Promise((resolve, reject) => {
-    var fulfilled = (value) => {
-      try {
-        step(generator.next(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var rejected = (value) => {
-      try {
-        step(generator.throw(value));
-      } catch (e) {
-        reject(e);
-      }
-    };
-    var step = (x) => x.done ? resolve(x.value) : Promise.resolve(x.value).then(fulfilled, rejected);
-    step((generator = generator.apply(__this, __arguments)).next());
-  });
-};
+// ============================================================
+// Einthusan Provider for Nuvio
+// Author: Nik
+// Version: 1.0.0
+// Supports: Hindi, Tamil, Telugu, Malayalam, Kannada,
+//           Bengali, Marathi, Punjabi movies
+// Note: Works with TMDB title search → Einthusan match
+// ============================================================
 
-// src/fuegocine/http.js
-var import_axios = __toESM(require("axios"));
+var BASE_URL = 'https://einthusan.tv';
+
 var HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Origin': 'https://einthusan.tv',
+  'Referer': 'https://einthusan.tv/'
 };
-function get(_0) {
-  return __async(this, arguments, function* (url, extraHeaders = {}, timeout = 15e3) {
-    const { data } = yield import_axios.default.get(url, {
-      headers: __spreadValues(__spreadValues({}, HEADERS), extraHeaders),
-      timeout
+
+// Language map — Einthusan uses lang slug in URL
+var LANG_SLUGS = ['hindi', 'tamil', 'telugu', 'malayalam', 'kannada', 'bengali', 'marathi', 'punjabi'];
+
+// ── Utility: simple HTML tag stripper ──────────────────────
+function stripTags(html) {
+  return html.replace(/<[^>]*>/g, '').trim();
+}
+
+// ── Utility: extract value between two strings ─────────────
+function extractBetween(str, start, end) {
+  var si = str.indexOf(start);
+  if (si === -1) return null;
+  si += start.length;
+  var ei = str.indexOf(end, si);
+  if (ei === -1) return null;
+  return str.substring(si, ei).trim();
+}
+
+// ── Step 1: Search Einthusan for a movie title ─────────────
+function searchEinthusan(title, lang) {
+  return new Promise(function (resolve) {
+    var searchUrl = BASE_URL + '/movie/results/?lang=' + lang + '&find=Search&title=' + encodeURIComponent(title);
+
+    fetch(searchUrl, { headers: HEADERS })
+      .then(function (res) { return res.text(); })
+      .then(function (html) {
+        // Extract first result movie ID
+        // Pattern: href="/movie/watch/12345/?lang=hindi"
+        var pattern = /href="\/movie\/watch\/(\d+)\/\?lang=([^"]+)"/;
+        var match = html.match(pattern);
+
+        if (!match) {
+          resolve(null);
+          return;
+        }
+
+        var movieId = match[1];
+        var movieLang = match[2];
+
+        // Also try to grab the movie title from result to verify match
+        var titlePattern = /<h3[^>]*>([\s\S]*?)<\/h3>/;
+        var titleMatch = html.match(titlePattern);
+        var foundTitle = titleMatch ? stripTags(titleMatch[1]) : '';
+
+        resolve({
+          id: movieId,
+          lang: movieLang,
+          title: foundTitle
+        });
+      })
+      .catch(function () { resolve(null); });
+  });
+}
+
+// ── Step 2: Get stream URL from movie watch page ───────────
+function getStreamFromMoviePage(movieId, lang) {
+  return new Promise(function (resolve) {
+    var watchUrl = BASE_URL + '/movie/watch/' + movieId + '/?lang=' + lang;
+    var ajaxUrl = BASE_URL + '/ajax/movie/watch/' + movieId + '/';
+
+    var pageHeaders = Object.assign({}, HEADERS, {
+      'Referer': BASE_URL + '/movie/browse/?lang=' + lang
     });
-    return data;
-  });
-}
 
-// src/fuegocine/extractor.js
-function generateUUID() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = Math.random() * 16 | 0;
-    const v = c === "x" ? r : r & 3 | 8;
-    return v.toString(16);
-  });
-}
-function decodeUrl(url) {
-  const b64Match = url.match(/[?&]r=([A-Za-z0-9+/=]+)/);
-  if (b64Match) {
-    try {
-      return atob(b64Match[1]);
-    } catch (e) {
-      return url;
-    }
-  }
-  const linkMatch = url.match(/[?&]link=([^&]+)/);
-  if (linkMatch) {
-    try {
-      return decodeURIComponent(linkMatch[1]);
-    } catch (e) {
-      return url;
-    }
-  }
-  const driveMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
-  if (driveMatch) {
-    const uuid = generateUUID();
-    return `https://drive.usercontent.google.com/download?id=${driveMatch[1]}&export=download&confirm=t&uuid=${uuid}`;
-  }
-  return url;
-}
-function extractLinks(html) {
-  var _a, _b;
-  const links = [];
-  const match = html.match(/const\s+_SV_LINKS\s*=\s*\[([\s\S]*?)\]\s*;?\s*<\/script>/);
-  if (!match) return links;
-  const block = match[1];
-  const entries = block.split(/\},?\s*\{/).map((e, i, arr) => {
-    if (i === 0) return "{" + e.replace(/^\s*\{?/, "{");
-    if (i === arr.length - 1) return "{" + e.replace(/\}?\s*$/, "") + "}";
-    return "{" + e + "}";
-  });
-  for (const entry of entries) {
-    try {
-      const lang = (entry.match(/lang\s*:\s*["']([^"']+)["']/) || [])[1] || "";
-      const name = ((_b = (_a = (entry.match(/name\s*:\s*["']([^"']+)["']/) || [])[1]) == null ? void 0 : _a.replace(/&#9989;/g, "")) == null ? void 0 : _b.replace(/&amp;/g, "&")) || "";
-      const quality = (entry.match(/quality\s*:\s*["']([^"']+)["']/) || [])[1] || "";
-      const rawUrl = (entry.match(/url\s*:\s*["']([^"']+)["']/) || [])[1] || "";
-      if (!rawUrl) continue;
-      links.push({ name, lang, quality, url: decodeUrl(rawUrl), rawUrl });
-    } catch (e) {
-    }
-  }
-  return links;
-}
-function resolveTurboVid(embedUrl) {
-  return __async(this, null, function* () {
-    var _a;
-    try {
-      const html = yield get(embedUrl, { Referer: "https://www.fuegocine.com/" });
-      const hashMatch = html.match(/data-hash="([^"]+\.m3u8[^"]*)"/);
-      if (!hashMatch) return embedUrl;
-      const masterUrl = hashMatch[1];
-      const m3u8 = yield get(masterUrl, { Referer: "https://turbovidhls.com/" });
-      const streams = [];
-      const lines = m3u8.split("\n");
-      for (let i = 0; i < lines.length; i++) {
-        const inf = lines[i].match(/^#EXT-X-STREAM-INF:.*BANDWIDTH=(\d+)/);
-        if (inf && ((_a = lines[i + 1]) == null ? void 0 : _a.trim())) {
-          streams.push({ bandwidth: parseInt(inf[1]), url: lines[i + 1].trim() });
+    fetch(watchUrl, { headers: pageHeaders })
+      .then(function (res) { return res.text(); })
+      .then(function (html) {
+
+        // Method 1: Look for direct MP4 link
+        var mp4Match = html.match(/file\s*:\s*["'](https?:\/\/[^"']+\.mp4[^"']*)/i);
+        if (mp4Match) {
+          resolve([{
+            url: mp4Match[1],
+            quality: 'HD',
+            format: 'mp4'
+          }]);
+          return;
         }
-      }
-      if (!streams.length) return masterUrl;
-      streams.sort((a, b) => b.bandwidth - a.bandwidth);
-      return streams[0].url;
-    } catch (e) {
-      return embedUrl;
-    }
-  });
-}
-function resolveVidNest(embedUrl) {
-  return __async(this, null, function* () {
-    try {
-      const html = yield get(embedUrl, { Referer: "https://www.fuegocine.com/" });
-      const match = html.match(/sources\s*:\s*\[\s*\{[^}]*file\s*:\s*"([^"]+\.mp4[^"]*)"/);
-      return match ? match[1] : embedUrl;
-    } catch (e) {
-      return embedUrl;
-    }
-  });
-}
-var BLOCKED_DOMAINS = ["goodstream.one", "unlimplay.com"];
-function resolveLinks(links) {
-  return __async(this, null, function* () {
-    const resolved = [];
-    for (const link of links) {
-      if (BLOCKED_DOMAINS.some((d) => link.url.includes(d))) continue;
-      if (link.url.includes("turbovidhls.com") || link.url.includes("turbovid")) {
-        const url = yield resolveTurboVid(link.url);
-        resolved.push(__spreadProps(__spreadValues({}, link), { url, embedUrl: link.url }));
-      } else if (link.url.includes("vidnest.io") && link.url.includes("/embed-")) {
-        const url = yield resolveVidNest(link.url);
-        resolved.push(__spreadProps(__spreadValues({}, link), { url, embedUrl: link.url }));
-      } else {
-        resolved.push(link);
-      }
-    }
-    return resolved;
-  });
-}
 
-// src/fuegocine/index.js
-var TMDB_KEY = "2dca580c2a14b55200e784d157207b4d";
-var TMDB_BASE = "https://api.themoviedb.org/3";
-var SEARCH_BASE = "https://www.fuegocine.com/feeds/posts/default?alt=json&max-results=10&q=";
-function getTmdbInfo(tmdbId, mediaType) {
-  return __async(this, null, function* () {
-    const type = mediaType === "movie" ? "movie" : "tv";
-    const data = yield get(`${TMDB_BASE}/${type}/${tmdbId}?api_key=${TMDB_KEY}&language=en-LA`);
-    const title = type === "movie" ? data.title || data.original_title : data.name || data.original_name;
-    const year = (type === "movie" ? data.release_date || "" : data.first_air_date || "").slice(0, 4);
-    return { title, year };
-  });
-}
-function searchFuegocine(title, season, episode) {
-  return __async(this, null, function* () {
-    var _a;
-    const epStr = episode ? String(episode).padStart(2, "0") : null;
-    const query = season ? `${title} ${season}x${epStr}` : title;
-    const data = yield get(SEARCH_BASE + encodeURIComponent(query));
-    const entries = ((_a = data.feed) == null ? void 0 : _a.entry) || [];
-    let results = entries.map((e) => {
-      var _a2, _b, _c;
-      return {
-        title: ((_a2 = e.title) == null ? void 0 : _a2.$t) || "",
-        url: ((_c = (_b = e.link) == null ? void 0 : _b.find((l) => l.rel === "alternate")) == null ? void 0 : _c.href) || ""
-      };
-    }).filter((e) => e.url);
-    if (season) {
-      const pattern = episode ? new RegExp(`${season}x0*${episode}\\b`, "i") : new RegExp(`${season}x\\d+`, "i");
-      results = results.filter((c) => pattern.test(c.title));
-    }
-    return results;
-  });
-}
-function getStreams(tmdbId, mediaType, season, episode) {
-  return __async(this, null, function* () {
-    try {
-      const { title, year } = yield getTmdbInfo(tmdbId, mediaType);
-      if (!title) return [];
-      console.log(`[FuegoCine] Buscando: ${title}${year ? ` (${year})` : ""}`);
-      const candidates = yield searchFuegocine(title, season, episode);
-      if (!candidates.length) {
-        console.log("[FuegoCine] Sin resultados");
-        return [];
-      }
-      const allStreams = [];
-      for (const candidate of candidates) {
-        const html = yield get(candidate.url);
-        const links = yield resolveLinks(extractLinks(html));
-        for (const link of links) {
-          allStreams.push({
-            name: "FuegoCine",
-            title: `[${link.lang.toUpperCase()}] ${link.name} (${link.quality})`,
-            url: link.url,
-            quality: link.quality,
-            headers: {
-              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-              "Referer": "https://www.fuegocine.com/"
-            }
+        // Method 2: Look for M3U8 / HLS stream
+        var m3u8Match = html.match(/["'](https?:\/\/[^"']+\.m3u8[^"']*)/i);
+        if (m3u8Match) {
+          resolve([{
+            url: m3u8Match[1],
+            quality: 'HD',
+            format: 'm3u8'
+          }]);
+          return;
+        }
+
+        // Method 3: Extract CSRF token + ejpingdom data and hit AJAX
+        var csrfMatch = html.match(/gorilla\.csrf\.Token['":\s]+(['"]+)([^'"]+)/);
+        var csrf = csrfMatch ? csrfMatch[2] : '';
+
+        var ejMatch = html.match(/data-ejpingdom['":\s]+(['"]+)([^'"]+)/);
+        var ejData = ejMatch ? ejMatch[2] : '';
+
+        if (csrf && ejData) {
+          var ajaxHeaders = Object.assign({}, HEADERS, {
+            'Referer': watchUrl,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded'
           });
+
+          var postBody = 'xEvent=UIVideoPlayer.PingOutcome&xJson=' +
+            encodeURIComponent(ejData) +
+            '&arcVersion=3&appVersion=59&gorilla.csrf.Token=' +
+            encodeURIComponent(csrf);
+
+          fetch(ajaxUrl, {
+            method: 'POST',
+            headers: ajaxHeaders,
+            body: postBody
+          })
+            .then(function (r) { return r.text(); })
+            .then(function (ajaxHtml) {
+              var streamMatch = ajaxHtml.match(/["'](https?:\/\/[^"']+\.(mp4|m3u8)[^"']*)/i);
+              if (streamMatch) {
+                resolve([{
+                  url: streamMatch[1],
+                  quality: 'HD',
+                  format: streamMatch[2]
+                }]);
+              } else {
+                resolve([]);
+              }
+            })
+            .catch(function () { resolve([]); });
+        } else {
+          resolve([]);
         }
-      }
-      console.log(`[FuegoCine] ${allStreams.length} stream(s) encontrados`);
-      return allStreams;
-    } catch (err) {
-      console.error("[FuegoCine] Error:", err.message);
-      return [];
-    }
+      })
+      .catch(function () { resolve([]); });
   });
 }
-module.exports = { getStreams };
+
+// ── Step 3: Lookup TMDB title using TMDB ID ────────────────
+function getTmdbTitle(tmdbId, mediaType) {
+  return new Promise(function (resolve) {
+    // Nuvio passes tmdbId — we use TMDB's public endpoint (no key needed for basic info)
+    var tmdbUrl = 'https://api.themoviedb.org/3/' + mediaType + '/' + tmdbId + '?language=en-US&api_key=4ef0d7355d9ffb5151e987764708ce96';
+
+    fetch(tmdbUrl)
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        var title = data.title || data.name || null;
+        resolve(title);
+      })
+      .catch(function () { resolve(null); });
+  });
+}
+
+// ── Main exported function ─────────────────────────────────
+function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
+  return new Promise(function (resolve) {
+
+    // Einthusan only has movies (not TV series usually)
+    // We'll still try for both but focus on movies
+    getTmdbTitle(tmdbId, mediaType)
+      .then(function (title) {
+        if (!title) {
+          resolve([]);
+          return;
+        }
+
+        // Try searching across key Indian languages
+        var searchPromises = LANG_SLUGS.map(function (lang) {
+          return searchEinthusan(title, lang);
+        });
+
+        Promise.all(searchPromises)
+          .then(function (results) {
+            // Filter out nulls and get first valid result
+            var validResults = results.filter(function (r) { return r !== null; });
+
+            if (validResults.length === 0) {
+              resolve([]);
+              return;
+            }
+
+            // Get streams from first valid match
+            var best = validResults[0];
+            return getStreamFromMoviePage(best.id, best.lang);
+          })
+          .then(function (streams) {
+            resolve(streams || []);
+          })
+          .catch(function () { resolve([]); });
+      });
+  });
+}
+
+module.exports = { getStreams: getStreams };
