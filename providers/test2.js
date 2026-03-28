@@ -1,31 +1,28 @@
 const axios = require("axios")
 
-const BASE = "https://kdiflix.xyz"
-
 // ----------------------
-// Generic helpers
+// Helpers
 // ----------------------
-
-function extractM3U8(text) {
-    return [...text.matchAll(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g)].map(m => m[0])
-}
 
 function getQuality(url) {
     if (url.includes("2160")) return "4K"
-    if (url.includes("1440")) return "1440p"
     if (url.includes("1080")) return "1080p"
     if (url.includes("720")) return "720p"
     return "auto"
 }
 
-async function fetch(url, referer = BASE) {
+function extractM3U8(text) {
+    return [...text.matchAll(/https?:\/\/[^"' ]+\.m3u8[^"' ]*/g)].map(m => m[0])
+}
+
+async function fetch(url, headers = {}) {
     try {
         const res = await axios.get(url, {
             headers: {
                 "User-Agent": "Mozilla/5.0",
-                "Referer": referer
+                ...headers
             },
-            timeout: 10000
+            timeout: 8000
         })
         return res.data
     } catch {
@@ -34,124 +31,65 @@ async function fetch(url, referer = BASE) {
 }
 
 // ----------------------
-// HOST EXTRACTORS
+// 🎯 VIDSRC DIRECT API
 // ----------------------
 
-// 🎯 VIDSRC
-async function extractVidsrc(url) {
-    const html = await fetch(url, url)
-    if (!html) return []
+async function getVidsrc(id, type, season, episode) {
+    let url
 
-    let streams = extractM3U8(html)
-
-    // sometimes nested
-    const inner = html.match(/src:\s*"(https:[^"]+)"/)
-    if (inner) {
-        const nested = await fetch(inner[1], url)
-        if (nested) streams.push(...extractM3U8(nested))
+    if (type === "movie") {
+        url = `https://vidsrc.xyz/embed/movie/${id}`
+    } else {
+        url = `https://vidsrc.xyz/embed/tv/${id}/${season}/${episode}`
     }
 
-    return streams
-}
-
-// 🎯 VIDROCK
-async function extractVidrock(url) {
-    const html = await fetch(url, url)
-    if (!html) return []
-
-    let streams = extractM3U8(html)
-
-    // vidrock often hides sources in eval-packed JS
-    const packed = html.match(/eval\(function\(p,a,c,k,e,d\).*?\)\)/s)
-    if (packed) {
-        const unpacked = packed[0] // (basic fallback, real unpack optional)
-        streams.push(...extractM3U8(unpacked))
-    }
-
-    return streams
-}
-
-// 🎯 GENERIC (fallback)
-async function extractGeneric(url) {
-    const html = await fetch(url, url)
+    const html = await fetch(url, { Referer: "https://vidsrc.xyz/" })
     if (!html) return []
 
     return extractM3U8(html)
 }
 
 // ----------------------
-// ROUTER
+// 🎯 VIDROCK
 // ----------------------
 
-async function routeExtractor(url) {
-    if (url.includes("vidsrc")) return await extractVidsrc(url)
-    if (url.includes("vidrock")) return await extractVidrock(url)
+async function getVidrock(id) {
+    const url = `https://vidrock.net/embed/${id}`
 
-    return await extractGeneric(url)
-}
-
-// ----------------------
-// MAIN PAGE SCRAPER
-// ----------------------
-
-async function extractFromKDIFlix(url) {
-    const html = await fetch(url)
+    const html = await fetch(url, { Referer: "https://vidrock.net/" })
     if (!html) return []
 
-    let streams = []
-
-    // Direct m3u8
-    streams.push(...extractM3U8(html))
-
-    // Find iframes
-    const iframes = [...html.matchAll(/<iframe[^>]+src="([^"]+)"/g)]
-        .map(m => m[1])
-
-    // Process all iframes in parallel
-    const results = await Promise.all(
-        iframes.map(link => routeExtractor(link))
-    )
-
-    results.forEach(arr => streams.push(...arr))
-
-    return streams
+    return extractM3U8(html)
 }
 
 // ----------------------
-// NUVIO ENTRY
+// MAIN
 // ----------------------
 
 async function getStreams({ id, type, season, episode }) {
     try {
-        let url
+        let streams = []
 
-        if (id.startsWith("http")) {
-            url = id
-        } else {
-            if (type === "movie") {
-                url = `${BASE}/movies/${id}`
-            } else {
-                url = `${BASE}/episodes/${id}-season-${season}-episode-${episode}`
-            }
-        }
+        // ⚠️ IMPORTANT:
+        // id MUST be imdb id (ttxxxx)
+        // or tmdb id depending on your setup
 
-        let raw = await extractFromKDIFlix(url)
+        const results = await Promise.all([
+            getVidsrc(id, type, season, episode),
+            getVidrock(id)
+        ])
 
-        // fallback known working hosts
-        if (raw.length === 0) {
-            raw.push(
-                "https://flickfox.p2pstream.vip/hls/.../master.m3u8",
-                "https://tmstr2.neonhorizonworkshops.com/.../master.m3u8"
-            )
-        }
+        results.forEach(arr => {
+            if (arr) streams.push(...arr)
+        })
 
         // dedupe
-        const unique = [...new Set(raw)]
+        const unique = [...new Set(streams)]
 
-        return unique.map(u => ({
-            url: u,
+        return unique.map(url => ({
+            url,
             type: "hls",
-            quality: getQuality(u)
+            quality: getQuality(url)
         }))
 
     } catch (err) {
@@ -161,6 +99,6 @@ async function getStreams({ id, type, season, episode }) {
 }
 
 module.exports = {
-    name: "KDIFlix PRO",
+    name: "KDIFlix FAST",
     getStreams
 }
