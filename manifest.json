@@ -104,7 +104,7 @@
       "filename": "providers/allmovieland.js",
       "enabled": true,
       "formats": ["m3u8"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/hhWqkVQs/allmovieland.png",
       "contentLanguage": ["en", "hi", "ta", "te"]  
     },
     { 
