@@ -4,7 +4,7 @@
 const cheerio = require('cheerio-without-node-native');
 
 const HIANIME_APIS = [
-    "https://hianime.dk",
+    "https://hianime.dk/home",
     "https://hianime.ws",
     "https://hianime.io",
     "https://hianime.ro",
