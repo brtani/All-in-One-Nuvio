@@ -299,7 +299,7 @@
       "filename": "providers/moviebox.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "https://github.com/NivinCNC/CNCVerse-Cloud-Stream-Extension/raw/refs/heads/master/MovieBoxProvider/icon.png",
+      "logo": "https://i.postimg.cc/TPwkfqHh/moviebox.png",
       "contentLanguage": ["en", "hi", "ta", "te"]  
     },
     {
