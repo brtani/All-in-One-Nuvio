@@ -286,7 +286,7 @@
       "filename": "providers/isaidub.js",
       "enabled": true,
       "formats": ["m3u8"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/TYtwWDXH/isaidub.png",
       "contentLanguage": ["ta"]
     },   
     {
