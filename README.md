@@ -51,47 +51,7 @@ A collection of high-quality local scrapers for the Nuvio streaming application.
 2. The scraper fetches content metadata from TMDB
 3. It searches the streaming provider for matching content
 4. Returns available streams with quality information
-5. Select a stream and play
-
-## Development
-
-### Provider Structure
-
-Each provider must:
-- Export a `getStreams` function
-- Use Promise-based approach (NO async/await)
-- Return an array of stream objects
-- Handle errors gracefully
-
-### Stream Object Format
-
-```javascript
-{
-    name: "Provider - Quality",           // Display name
-    title: "Movie Title (Year)",          // Full title with year
-    url: "https://stream-url",            // Direct stream URL
-    quality: "1080p",                     // Quality level
-    size: "2.5GB",                        // File size (optional)
-    provider: "provider-id",              // Provider identifier
-    headers: {                            // Required headers
-        'User-Agent': '...',
-        'Referer': '...'
-    }
-}
-```
-
-### Function Signature
-
-```javascript
-function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
-    // tmdbId: TMDB ID (string)
-    // mediaType: "movie" or "tv" (string)
-    // seasonNum: Season number (number, TV only)
-    // episodeNum: Episode number (number, TV only)
-    
-    return Promise.resolve([...streams]);
-}
-```
+5. Select a stream and play     
 
 ## Troubleshooting
 
@@ -131,21 +91,16 @@ This project is licensed under the GNU General Public License v3.0 - see the LIC
 
 This project is for educational purposes only. Users are responsible for ensuring their use complies with applicable laws and regulations in their jurisdiction.
 
-## Support
+## Credits
 
-For issues or questions:
-1. Check this README
-2. Review provider logs in Nuvio
-3. Verify internet connection
-4. Try with different content
-
-## Version History
-
-### v1.0.0
-- Initial release with 4KHDHub provider
-- Full movie and TV show support
-- Multiple quality options
-- Proper error handling
+A masive shoutout to all the developers who have created these plugins.
+• Yoruix
+• Phisher98
+• Wooodyhood
+• Piratezoro9 (Kabir)
+• Abinanthankv
+• KennethJYS
+• Real-Morpheus
 
 ---
 
