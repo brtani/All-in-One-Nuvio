@@ -9,9 +9,9 @@ function getStreams(tmdbId, mediaType, season, episode) {
   
   // VidSrc embed URLs
   // These are embed players that handle multiple hosts internally
-  var vidsrcBase = 'https://vidsrc.rip/embed/';
-  var vidsrc2Base = 'https://vidsrc.icu/embed/';
-  var vidsrcToBase = 'https://vidsrc.to/embed/';
+  var vidsrcBase = 'https://vidsrc.ru';
+  var vidsrc2Base = 'https://vidsrc.icu';
+  var vidsrcToBase = 'https://vidsrc.to';
   
   if (mediaType === 'movie') {
     // Movie format: /embed/movie/TMDB_ID
