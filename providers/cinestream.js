@@ -26,7 +26,7 @@ var __async = (__this, __arguments, generator) => {
 // src/cinestream/index.js
 var TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 var TMDB_BASE_URL = "https://api.themoviedb.org/3";
-var API_BASE = "https://87d6a6ef6b58-webstreamrmbg.baby-beamup.club/configure";
+var API_BASE = "https://87d6a6ef6b58-webstreamrmbg.baby-beamup.club/";
 var HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "application/json"
