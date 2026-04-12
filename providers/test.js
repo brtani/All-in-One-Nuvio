@@ -60,17 +60,14 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
         ? `${title.replace(/:/g, '')} (${year})`
         : `${title.replace(/:/g, ' -')}`;
 
-    // Helper to fix spaces and parens without breaking slashes
-    const cleanPathPart = (part) => {
-        return part.replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29');
-    };
-
+    // Standard encoding for the fetch request
+    const requestFolder = encodeURIComponent(folderName);
     const pathType = season === null ? 'movies' : 'tvs';
-    const baseUrl = `${DAHMER_MOVIES_API}/${pathType}/${cleanPathPart(folderName)}/`;
+    const requestUrl = `${DAHMER_MOVIES_API}/${pathType}/${requestFolder}/`;
     
-    console.log(`[DahmerMovies] Requesting: ${baseUrl}`);
+    console.log(`[DahmerMovies] Searching folder: ${requestUrl}`);
 
-    return makeRequest(baseUrl).then(res => res.text()).then(html => {
+    return makeRequest(requestUrl).then(res => res.text()).then(html => {
         const paths = parseLinks(html);
         let filteredPaths;
         
@@ -82,17 +79,20 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
             filteredPaths = paths.filter(path => epPattern.test(path.text));
         }
         
+        // This is the specific encoding logic you requested for the final output
+        const fixUrlEncoding = (url) => {
+            return url.replace(/ /g, '%20').replace(/\(/g, '%28').replace(/\)/g, '%29');
+        };
+
         return filteredPaths.map(path => {
             let finalUrl;
             
-            if (path.href.startsWith('http')) {
-                finalUrl = cleanPathPart(path.href);
-            } else if (path.href.startsWith('/')) {
-                // If the server gives a root path, we only clean the path part, not the domain
-                finalUrl = DAHMER_MOVIES_API + cleanPathPart(path.href);
-            } else {
-                finalUrl = baseUrl + cleanPathPart(path.href);
-            }
+            // Reconstruct the URL properly
+            // Folder name part needs the specific ( ) encoding
+            const finalFolderName = fixUrlEncoding(folderName);
+            const finalFileName = fixUrlEncoding(path.href);
+            
+            finalUrl = `${DAHMER_MOVIES_API}/${pathType}/${finalFolderName}/${finalFileName}`;
             
             return {
                 name: "DahmerMovies",
