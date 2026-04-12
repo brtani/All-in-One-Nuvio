@@ -1,5 +1,5 @@
-// Dahmer Movies Scraper - Ultra Wide Compatibility Mode
-// Fixed for: Peaky Blinders, Crime 101, Send Help
+// Dahmer Movies Scraper - Dynamic Search Mode
+// Fixes: Peaky Blinders, Zootopia, Goat, Crime 101
 
 console.log('[DahmerMovies] Initializing Scraper');
 
@@ -32,53 +32,62 @@ function parseLinks(html) {
     return links;
 }
 
+// Cleans a string for comparison
+const slugify = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 async function invokeDahmerMovies(title, year, season = null, episode = null) {
     const pathType = season === null ? 'movies' : 'tvs';
-    const cleanTitle = title.replace(/:/g, '');
+    const rootUrl = `${DAHMER_MOVIES_API}/${pathType}/`;
     
-    // Create a list of possible folder names the server might use
-    const variations = [];
-    if (season === null) {
-        variations.push(`${cleanTitle} (${year})`);
-        variations.push(cleanTitle);
-        variations.push(cleanTitle.replace(/ /g, '.'));
-    } else {
-        variations.push(cleanTitle);
-        variations.push(`${cleanTitle} -`); // Common for TV shows on this server
-        variations.push(cleanTitle.replace(/ /g, '.'));
+    // 1. Fetch the main directory to FIND the correct folder
+    let rootHtml;
+    try {
+        const res = await makeRequest(rootUrl);
+        rootHtml = await res.text();
+    } catch (e) { return []; }
+
+    const allFolders = parseLinks(rootHtml);
+    const targetSlug = slugify(title);
+    
+    // 2. Find the folder that best matches our title
+    const match = allFolders.find(f => {
+        const folderSlug = slugify(decodeURIComponent(f.text));
+        // Check if title matches, or title + year matches
+        return folderSlug === targetSlug || folderSlug === slugify(`${title}${year}`);
+    });
+
+    if (!match) {
+        console.log(`[DahmerMovies] No folder match found for: ${title}`);
+        return [];
     }
 
-    let html = '';
-    let usedUrl = '';
-
-    // Try every variation until we hit a valid directory
-    for (const folder of variations) {
-        const tryUrl = `${DAHMER_MOVIES_API}/${pathType}/${encodeURIComponent(folder)}/` + (season !== null ? `Season ${season}/` : '');
-        try {
-            const res = await makeRequest(tryUrl);
-            html = await res.text();
-            usedUrl = tryUrl;
-            if (html && html.includes('<tr')) break;
-        } catch (e) {}
+    // 3. Enter the matched folder
+    let targetUrl = new URL(match.href, rootUrl).href;
+    if (season !== null) {
+        targetUrl += `Season ${season}/`;
     }
 
-    if (!html) return [];
+    let folderHtml;
+    try {
+        const res = await makeRequest(targetUrl);
+        folderHtml = await res.text();
+    } catch (e) { return []; }
 
-    const paths = parseLinks(html);
+    const paths = parseLinks(folderHtml);
     let filteredPaths = paths;
 
+    // 4. Handle TV Episode filtering
     if (season !== null) {
         const s = season < 10 ? `0${season}` : `${season}`;
         const e = episode < 10 ? `0${episode}` : `${episode}`;
-        // Matches S01E01, 1x01, or just " 01 "
         const epPattern = new RegExp(`(S${s}E${e}|${season}x${e}|[\\s\\.\\-]${e}[\\s\\.\\-])`, 'i');
         filteredPaths = paths.filter(p => epPattern.test(p.text) || epPattern.test(p.href));
     }
 
     return filteredPaths.map(path => {
-        const resolvedUrl = new URL(path.href, usedUrl).href;
+        const resolvedUrl = new URL(path.href, targetUrl).href;
         
-        // Final playback-safe encoding for spaces and ( )
+        // Final playback-safe encoding
         const finalUrl = decodeURIComponent(resolvedUrl)
             .replace(/ /g, '%20')
             .replace(/\(/g, '%28')
