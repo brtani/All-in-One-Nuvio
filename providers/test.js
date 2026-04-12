@@ -279,7 +279,7 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
                 // Relative path - combine with encoded base URL
                 const baseUrl = encodedUrl.endsWith('/') ? encodedUrl : encodedUrl + '/';
                 const relativePath = path.href.startsWith('/') ? path.href.substring(1) : path.href;
-                const encodedFilename = encodeURIComponent(relativePath);
+                const encodedFilename = encodeURI(relativePath);
                 fullUrl = baseUrl + encodedFilename;
             }
             
@@ -289,7 +289,10 @@ function invokeDahmerMovies(title, year, season = null, episode = null) {
                 url: fullUrl,
                 quality: qualityWithCodecs, // Use enhanced quality with codecs
                 size: formatFileSize(path.size), // Format file size
-                headers: {}, // No special headers needed for direct downloads
+                headers: {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Referer": DAHMER_MOVIES_API,
+                "Origin": DAHMER_MOVIES_API
+},
                 provider: "dahmermovies", // Provider identifier
                 filename: path.text
             };
