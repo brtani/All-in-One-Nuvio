@@ -2,7 +2,6 @@
 
 console.log('[DahmerMovies] Init');
 
-// CONFIG
 const TMDB_API_KEY = "439c478a771f35c05022f9feabcca01c";
 const BASE = "https://a.111477.xyz";
 
@@ -19,7 +18,7 @@ function makeRequest(url) {
     });
 }
 
-// PARSE LINKS
+// PARSE HTML LINKS
 function parseLinks(html) {
     const links = [];
     const regex = /<a[^>]*href=["']([^"']+)["'][^>]*>([^<]+)<\/a>/gi;
@@ -28,7 +27,9 @@ function parseLinks(html) {
     while ((m = regex.exec(html))) {
         const href = m[1];
         const text = m[2].trim();
+
         if (!text || text === "../") continue;
+
         links.push({ href, text });
     }
 
@@ -41,7 +42,7 @@ function getQuality(text) {
     return m ? parseInt(m[1]) : 0;
 }
 
-// MAIN
+// MAIN SCRAPER
 function invoke(title, year, season = null, episode = null) {
 
     const url = season === null
@@ -68,17 +69,17 @@ function invoke(title, year, season = null, episode = null) {
 
                 let finalUrl;
 
-                // URL FIX
+                // ✅ FIXED URL HANDLING (NO DOUBLE ENCODING)
                 if (l.href.startsWith("http")) {
                     finalUrl = l.href;
                 } else {
-                    const base = url.endsWith("/") ? url : url + "/";
-                    const clean = l.href.startsWith("/") ? l.href.slice(1) : l.href;
+                    // IMPORTANT: prevent /movies duplication + %2520 issue
+                    const cleanHref = l.href.startsWith("/") ? l.href : "/" + l.href;
 
-                    finalUrl = base + encodeURI(clean);
+                    finalUrl = BASE + cleanHref;
                 }
 
-                console.log("URL:", finalUrl);
+                console.log("FINAL URL:", finalUrl);
 
                 return {
                     name: "DahmerMovies",
@@ -86,7 +87,7 @@ function invoke(title, year, season = null, episode = null) {
                     url: finalUrl,
                     quality: getQuality(l.text),
 
-                    // 🔥 IMPORTANT HEADERS (FIXES EXOPLAYER)
+                    // FIXED HEADERS (ExoPlayer + Wuffy compatible)
                     headers: {
                         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
                         "Referer": BASE + "/",
@@ -96,9 +97,6 @@ function invoke(title, year, season = null, episode = null) {
                         "Connection": "keep-alive",
                         "Range": "bytes=0-"
                     },
-
-                    // 🔥 Helps with MKV playback fallback
-                    external: true,
 
                     filename: l.text
                 };
@@ -110,7 +108,7 @@ function invoke(title, year, season = null, episode = null) {
         });
 }
 
-// TMDB
+// TMDB WRAPPER
 function getStreams(id, type = "movie", season = null, episode = null) {
 
     const url = `https://api.themoviedb.org/3/${type}/${id}?api_key=${TMDB_API_KEY}`;
