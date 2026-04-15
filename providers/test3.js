@@ -15,7 +15,7 @@ function getStreams(id, mediaType, season, episode) {
         url += "&season=" + season + "&episode=" + episode;
     }
 
-    // Exact UA and Referer from your working logs
+    // Exact UA and Referer from your logs to ensure the redirect is authorized
     var ua = "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36";
 
     return fetch(url, {
@@ -29,15 +29,16 @@ function getStreams(id, mediaType, season, episode) {
         return response.json();
     })
     .then(function(data) {
-        if (!data || !data.servers) return [];
+        if (!data || !data.servers || !Array.isArray(data.servers)) {
+            return [];
+        }
 
-        return data.servers.map(function(server) {
-            // FIX: Instead of /embed/, we use the /api/v1/l endpoint
-            // This is the "Link" endpoint that returns the actual video file
-            var playbackUrl = PRIMESRC_BASE + "l?key=" + server.key;
+        return data.servers.map(function(s) {
+            // Corrected the variable name to 's' to match the function argument
+            var playbackUrl = PRIMESRC_BASE + "l?key=" + s.key;
 
             return {
-                name: "PrimeSrc - " + server.name,
+                name: "PrimeSrc - " + (s.name || "Server"),
                 url: playbackUrl,
                 quality: "1080p",
                 headers: { 
