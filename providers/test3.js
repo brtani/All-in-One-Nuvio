@@ -1,66 +1,72 @@
-// PrimeSrc Scraper - Header-Matched Version
-const PRIMESRC_BASE = "https://primesrc.me/api/v1/";
-const PRIMESRC_SITE = "https://primesrc.me";
+var PRIMESRC_API = "https://primesrc.me/api/v1/";
 
 function getStreams(id, mediaType, season, episode) {
     var isImdb = (typeof id === 'string' && id.indexOf('tt') === 0);
     var type = (season && episode) ? "tv" : "movie";
     
-    var url = PRIMESRC_BASE + "list_servers?type=" + type;
-    url += isImdb ? ("&imdb=" + id) : ("&tmdb=" + id);
-    if (type === "tv") url += "&season=" + season + "&episode=" + episode;
+    var searchUrl = PRIMESRC_API + "list_servers?type=" + type;
+    searchUrl += isImdb ? ("&imdb=" + id) : ("&tmdb=" + id);
+    if (type === "tv") searchUrl += "&season=" + season + "&episode=" + episode;
 
-    // These headers mimic the successful playback environment you shared
-    var baseHeaders = {
-        "User-Agent": "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36",
-        "Referer": PRIMESRC_SITE + "/",
-        "X-Requested-With": "com.nuvio.app" // Common for Android WebView streamers
-    };
+    // The "Magic" User-Agent from your logs
+    var androidUA = "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36";
 
-    return fetch(url, { headers: baseHeaders })
-    .then(function(r) { return r.ok ? r.json() : null; })
+    return fetch(searchUrl, {
+        headers: { "User-Agent": androidUA, "Referer": "https://primesrc.me/" }
+    })
+    .then(function(r) { return r.json(); })
     .then(function(data) {
         if (!data || !data.servers) return [];
 
-        var promises = data.servers.map(function(server) {
-            return fetch(PRIMESRC_BASE + "l?key=" + server.key, { headers: baseHeaders })
+        var results = [];
+        for (var i = 0; i < data.servers.length; i++) {
+            var s = data.servers[i];
+            
+            var p = fetch(PRIMESRC_API + "l?key=" + s.key, {
+                headers: { "User-Agent": androidUA, "Referer": "https://primesrc.me/" }
+            })
             .then(function(res) { return res.json(); })
-            .then(function(linkData) {
-                if (!linkData || !linkData.link) return null;
+            .then(function(ld) {
+                if (!ld || !ld.link) return null;
 
-                var finalUrl = linkData.link;
+                var streamUrl = ld.link;
+                
+                // --- DYNAMIC HEADER MATCHING ---
                 var streamHeaders = {
-                    "User-Agent": baseHeaders["User-Agent"],
+                    "User-Agent": androidUA,
                     "Accept": "*/*",
-                    "Accept-Encoding": "identity;q=1, *;q=0",
                     "sec-ch-ua-platform": "Android",
                     "sec-ch-ua-mobile": "?1"
                 };
 
-                // DYNAMIC REFERER LOGIC
-                // Based on your logs, different hosts need different referers
-                if (finalUrl.indexOf("streamta.site") !== -1) {
+                // Apply the exact Referer/Origin logic from your logs
+                if (streamUrl.indexOf("streamta.site") !== -1) {
                     streamHeaders["Referer"] = "https://streamta.site/";
                     streamHeaders["Origin"] = "https://streamta.site";
-                } else if (finalUrl.indexOf("cloudatacdn.com") !== -1) {
+                } else if (streamUrl.indexOf("cloudatacdn.com") !== -1) {
                     streamHeaders["Referer"] = "https://playmogo.com/";
+                } else if (streamUrl.indexOf("tapecontent.net") !== -1) {
+                    streamHeaders["Referer"] = "https://streamta.site/";
+                    streamHeaders["Origin"] = "https://streamta.site";
                 } else {
-                    streamHeaders["Referer"] = PRIMESRC_SITE + "/";
+                    streamHeaders["Referer"] = "https://primesrc.me/";
                 }
 
                 return {
-                    name: "PrimeSrc - " + (server.name || "HD"),
-                    url: finalUrl,
+                    name: "PrimeSrc: " + (s.name || "Server"),
+                    url: streamUrl,
                     quality: "1080p",
                     headers: streamHeaders,
                     provider: "primesrc"
                 };
             })
             .catch(function() { return null; });
-        });
 
-        return Promise.all(promises).then(function(results) {
-            return results.filter(function(s) { return s !== null; });
+            results.push(p);
+        }
+
+        return Promise.all(results).then(function(final) {
+            return final.filter(function(item) { return item !== null; });
         });
     })
     .catch(function() { return []; });
