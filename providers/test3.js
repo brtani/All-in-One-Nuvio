@@ -1,5 +1,5 @@
 // PrimeSrc Scraper for Nuvio
-// Logic: Restored to basic fetching loops
+// Focus: Restore Fetching + Fix 23003 Error
 
 var PRIMESRC_API = "https://primesrc.me/api/v1/";
 
@@ -7,6 +7,7 @@ function getStreams(id, mediaType, season, episode) {
     var type = (season && episode) ? "tv" : "movie";
     var isImdb = (typeof id === 'string' && id.indexOf('tt') === 0);
     
+    // Build Search URL
     var searchUrl = PRIMESRC_API + "list_servers?type=" + type;
     if (isImdb) {
         searchUrl += "&imdb=" + id;
@@ -29,14 +30,9 @@ function getStreams(id, mediaType, season, episode) {
     .then(function(data) {
         if (!data || !data.servers) return [];
 
-        var results = [];
-        var servers = data.servers;
-
-        // Using a basic for-loop for maximum stability in Nuvio
-        var fetchAll = [];
-        for (var i = 0; i < servers.length; i++) {
-            var s = servers[i];
-            var p = fetch(PRIMESRC_API + "l?key=" + s.key, {
+        // Map servers to links
+        var fetchPromises = data.servers.map(function(s) {
+            return fetch(PRIMESRC_API + "l?key=" + s.key, {
                 headers: { "User-Agent": ua, "Referer": "https://primesrc.me/" }
             })
             .then(function(lRes) { return lRes.json(); })
@@ -46,7 +42,7 @@ function getStreams(id, mediaType, season, episode) {
                 var finalUrl = lData.link;
                 var streamRef = "https://primesrc.me/";
 
-                // Apply referer fixes from your successful logs
+                // Apply referer fixes from your successful logs to stop 23003
                 if (finalUrl.indexOf("streamta.site") !== -1) streamRef = "https://streamta.site/";
                 if (finalUrl.indexOf("cloudatacdn.com") !== -1) streamRef = "https://playmogo.com/";
 
@@ -63,16 +59,10 @@ function getStreams(id, mediaType, season, episode) {
                 };
             })
             .catch(function() { return null; });
-            
-            fetchAll.push(p);
-        }
+        });
 
-        return Promise.all(fetchAll).then(function(items) {
-            var filtered = [];
-            for (var j = 0; j < items.length; j++) {
-                if (items[j]) filtered.push(items[j]);
-            }
-            return filtered;
+        return Promise.all(fetchPromises).then(function(results) {
+            return results.filter(function(x) { return x !== null; });
         });
     })
     .catch(function() { 
