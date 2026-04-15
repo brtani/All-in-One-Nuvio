@@ -1,85 +1,79 @@
-var PRIMESRC_API = "https://primesrc.me/api/v1/";
+// PrimeSrc Scraper - Bulletproof Nuvio Version
+var PRIMESRC_BASE = "https://primesrc.me/api/v1/";
 
 function getStreams(id, mediaType, season, episode) {
-    var type = (season && episode) ? "tv" : "movie";
+    // 1. Setup ID and Type
     var isImdb = (typeof id === 'string' && id.indexOf('tt') === 0);
+    var type = (season && episode) ? "tv" : "movie";
     
-    // 1. SIMPLEST URL CONSTRUCTION
-    var searchUrl = PRIMESRC_API + "list_servers?type=" + type;
+    // 2. Build URL strictly according to your provided docs
+    var url = PRIMESRC_BASE + "list_servers?type=" + type;
     if (isImdb) {
-        searchUrl += "&imdb=" + id;
+        url += "&imdb=" + id;
     } else {
-        searchUrl += "&tmdb=" + id;
+        url += "&tmdb=" + id;
     }
     
     if (type === "tv") {
-        searchUrl += "&season=" + season + "&episode=" + episode;
+        url += "&season=" + season + "&episode=" + episode;
     }
 
-    // Exact UA from your logs
-    var ua = "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36";
+    console.log("[PrimeSrc] Requesting URL: " + url);
 
-    // 2. RAW FETCH (NO COMPLEX PROMISE WRAPPERS)
-    return fetch(searchUrl, {
-        headers: { "User-Agent": ua, "Referer": "https://primesrc.me/" }
-    })
-    .then(function(res) { 
-        return res.json(); 
+    // 3. Simple Fetch with NO advanced headers (sometimes less is more in Nuvio)
+    return fetch(url)
+    .then(function(response) {
+        if (!response.ok) return null;
+        return response.json();
     })
     .then(function(data) {
-        if (!data || !data.servers) return [];
-
-        var results = [];
-        var servers = data.servers;
-
-        // Using a basic for-loop - most stable in Nuvio
-        var allPromises = [];
-        for (var i = 0; i < servers.length; i++) {
-            (function(s) {
-                var p = fetch(PRIMESRC_API + "l?key=" + s.key, {
-                    headers: { "User-Agent": ua, "Referer": "https://primesrc.me/" }
-                })
-                .then(function(lRes) { return lRes.json(); })
-                .then(function(ld) {
-                    if (ld && ld.link) {
-                        var streamUrl = ld.link;
-                        var ref = "https://primesrc.me/";
-
-                        // Apply the exact Referer/Origin fixes from your logs
-                        if (streamUrl.indexOf("streamta.site") !== -1) {
-                            ref = "https://streamta.site/";
-                        } else if (streamUrl.indexOf("cloudatacdn.com") !== -1) {
-                            ref = "https://playmogo.com/";
-                        }
-
-                        return {
-                            name: "PrimeSrc: " + (s.name || "Server"),
-                            url: streamUrl,
-                            headers: {
-                                "User-Agent": ua,
-                                "Referer": ref,
-                                "Origin": ref.replace(/\/$/, ""),
-                                "Accept": "*/*",
-                                "Accept-Encoding": "identity;q=1, *;q=0"
-                            }
-                        };
-                    }
-                    return null;
-                })
-                .catch(function() { return null; });
-                allPromises.push(p);
-            })(servers[i]);
+        // Safety Check: If data is empty or servers missing
+        if (!data || !data.servers || !Array.isArray(data.servers)) {
+            console.log("[PrimeSrc] No servers array found in JSON");
+            return [];
         }
 
-        return Promise.all(allPromises).then(function(items) {
-            var filtered = [];
-            for (var j = 0; j < items.length; j++) {
-                if (items[j]) filtered.push(items[j]);
+        var results = [];
+        for (var i = 0; i < data.servers.length; i++) {
+            var s = data.servers[i];
+            if (!s.name) continue;
+
+            // Reconstruct the EMBED URL as the video source
+            // This is the most reliable way to get playback working
+            var embedUrl = "https://primesrc.me/embed/" + type + "?";
+            if (isImdb) {
+                embedUrl += "imdb=" + id;
+            } else {
+                embedUrl += "tmdb=" + id;
             }
-            return filtered;
-        });
+
+            if (type === "tv") {
+                embedUrl += "&season=" + season + "&episode=" + episode;
+            }
+
+            // Force this specific server
+            embedUrl += "&whitelistServers=" + encodeURIComponent(s.name);
+
+            results.push({
+                name: "PrimeSrc: " + s.name,
+                url: embedUrl,
+                quality: "Auto",
+                // Essential headers for Android TV
+                headers: {
+                    "Referer": "https://primesrc.me/",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+            });
+        }
+
+        console.log("[PrimeSrc] Found " + results.length + " servers");
+        return results;
     })
-    .catch(function() { return []; });
+    .catch(function(err) {
+        console.error("[PrimeSrc] Fatal Fetch Error: " + err.message);
+        return [];
+    });
 }
 
-if (typeof module !== 'undefined') module.exports = { getStreams: getStreams };
+// Ensure Nuvio sees the function
+if (typeof module !== 'undefined') { module.exports = { getStreams: getStreams }; }
