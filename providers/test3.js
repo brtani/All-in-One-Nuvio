@@ -1,79 +1,69 @@
-// PrimeSrc Scraper - Bulletproof Nuvio Version
-var PRIMESRC_BASE = "https://primesrc.me/api/v1/";
+// PrimeSrc Scraper - Header-Matched Version
+const PRIMESRC_BASE = "https://primesrc.me/api/v1/";
+const PRIMESRC_SITE = "https://primesrc.me";
 
 function getStreams(id, mediaType, season, episode) {
-    // 1. Setup ID and Type
     var isImdb = (typeof id === 'string' && id.indexOf('tt') === 0);
     var type = (season && episode) ? "tv" : "movie";
     
-    // 2. Build URL strictly according to your provided docs
     var url = PRIMESRC_BASE + "list_servers?type=" + type;
-    if (isImdb) {
-        url += "&imdb=" + id;
-    } else {
-        url += "&tmdb=" + id;
-    }
-    
-    if (type === "tv") {
-        url += "&season=" + season + "&episode=" + episode;
-    }
+    url += isImdb ? ("&imdb=" + id) : ("&tmdb=" + id);
+    if (type === "tv") url += "&season=" + season + "&episode=" + episode;
 
-    console.log("[PrimeSrc] Requesting URL: " + url);
+    // These headers mimic the successful playback environment you shared
+    var baseHeaders = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36",
+        "Referer": PRIMESRC_SITE + "/",
+        "X-Requested-With": "com.nuvio.app" // Common for Android WebView streamers
+    };
 
-    // 3. Simple Fetch with NO advanced headers (sometimes less is more in Nuvio)
-    return fetch(url)
-    .then(function(response) {
-        if (!response.ok) return null;
-        return response.json();
-    })
+    return fetch(url, { headers: baseHeaders })
+    .then(function(r) { return r.ok ? r.json() : null; })
     .then(function(data) {
-        // Safety Check: If data is empty or servers missing
-        if (!data || !data.servers || !Array.isArray(data.servers)) {
-            console.log("[PrimeSrc] No servers array found in JSON");
-            return [];
-        }
+        if (!data || !data.servers) return [];
 
-        var results = [];
-        for (var i = 0; i < data.servers.length; i++) {
-            var s = data.servers[i];
-            if (!s.name) continue;
+        var promises = data.servers.map(function(server) {
+            return fetch(PRIMESRC_BASE + "l?key=" + server.key, { headers: baseHeaders })
+            .then(function(res) { return res.json(); })
+            .then(function(linkData) {
+                if (!linkData || !linkData.link) return null;
 
-            // Reconstruct the EMBED URL as the video source
-            // This is the most reliable way to get playback working
-            var embedUrl = "https://primesrc.me/embed/" + type + "?";
-            if (isImdb) {
-                embedUrl += "imdb=" + id;
-            } else {
-                embedUrl += "tmdb=" + id;
-            }
+                var finalUrl = linkData.link;
+                var streamHeaders = {
+                    "User-Agent": baseHeaders["User-Agent"],
+                    "Accept": "*/*",
+                    "Accept-Encoding": "identity;q=1, *;q=0",
+                    "sec-ch-ua-platform": "Android",
+                    "sec-ch-ua-mobile": "?1"
+                };
 
-            if (type === "tv") {
-                embedUrl += "&season=" + season + "&episode=" + episode;
-            }
-
-            // Force this specific server
-            embedUrl += "&whitelistServers=" + encodeURIComponent(s.name);
-
-            results.push({
-                name: "PrimeSrc: " + s.name,
-                url: embedUrl,
-                quality: "Auto",
-                // Essential headers for Android TV
-                headers: {
-                    "Referer": "https://primesrc.me/",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                // DYNAMIC REFERER LOGIC
+                // Based on your logs, different hosts need different referers
+                if (finalUrl.indexOf("streamta.site") !== -1) {
+                    streamHeaders["Referer"] = "https://streamta.site/";
+                    streamHeaders["Origin"] = "https://streamta.site";
+                } else if (finalUrl.indexOf("cloudatacdn.com") !== -1) {
+                    streamHeaders["Referer"] = "https://playmogo.com/";
+                } else {
+                    streamHeaders["Referer"] = PRIMESRC_SITE + "/";
                 }
-            });
-        }
 
-        console.log("[PrimeSrc] Found " + results.length + " servers");
-        return results;
+                return {
+                    name: "PrimeSrc - " + (server.name || "HD"),
+                    url: finalUrl,
+                    quality: "1080p",
+                    headers: streamHeaders,
+                    provider: "primesrc"
+                };
+            })
+            .catch(function() { return null; });
+        });
+
+        return Promise.all(promises).then(function(results) {
+            return results.filter(function(s) { return s !== null; });
+        });
     })
-    .catch(function(err) {
-        console.error("[PrimeSrc] Fatal Fetch Error: " + err.message);
-        return [];
-    });
+    .catch(function() { return []; });
 }
 
-// Ensure Nuvio sees the function
-if (typeof module !== 'undefined') { module.exports = { getStreams: getStreams }; }
+if (typeof module !== 'undefined') module.exports = { getStreams: getStreams };
