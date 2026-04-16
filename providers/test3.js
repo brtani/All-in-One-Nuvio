@@ -1,61 +1,55 @@
 // ============================================================
-// Einthusan Provider - Zero-Spin Production Fix
+// Einthusan Provider - Header Pipe Version (Fixes Spinning)
 // ============================================================
 
 var BASE_URL = 'https://einthusan.tv';
 
-var HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36',
-  'Referer': 'https://einthusan.tv/',
-  'Accept': '*/*',
-  'Connection': 'keep-alive'
-};
+var UA = 'Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36';
 
 function getStreams(tmdbId, mediaType) {
   return new Promise(function (resolve) {
-    // Hardcoded for test movie '21lw'
+    // Testing specifically with movie ID 21lw
     var watchUrl = BASE_URL + '/movie/watch/21lw/?lang=hindi';
 
-    fetch(watchUrl, { headers: HEADERS })
-      .then(function (res) { return res.text(); })
-      .then(function (html) {
-        // Broad capture for the video link
-        var match = html.match(/["'](https?:\/\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i);
+    fetch(watchUrl, { 
+      headers: {
+        'User-Agent': UA,
+        'Referer': 'https://einthusan.tv/'
+      }
+    })
+    .then(function (res) { return res.text(); })
+    .then(function (html) {
+      // Logic to find the link in the HTML
+      var match = html.match(/["'](https?:\/\/[^"']+\.(?:m3u8|mp4)[^"']*)["']/i);
 
-        if (match && match[1]) {
-          // --- THE CRITICAL CLEANING STEP ---
-          var streamUrl = match[1]
-            .replace(/&amp;/g, '&')  // Fix broken URL parameters
-            .replace(/\\/g, '')      // Remove escape slashes
-            .trim();
+      if (match && match[1]) {
+        var rawUrl = match[1].replace(/&amp;/g, '&').replace(/\\/g, '').trim();
 
-          // If it's an m3u8, we ensure the player knows it's a stream
-          var isHLS = streamUrl.indexOf('m3u8') !== -1;
+        // --- THE "BULLETPROOF" FIX ---
+        // We append the headers directly to the URL string. 
+        // Many Android players (VLC, ExoPlayer) use this to bypass blocks.
+        var pipedUrl = rawUrl + '|User-Agent=' + encodeURIComponent(UA) + '&Referer=' + encodeURIComponent('https://einthusan.tv/');
 
-          console.log('FINAL ATTEMPT URL: ' + streamUrl);
+        console.log('SUCCESS: Link with Pipe -> ' + pipedUrl);
 
-          resolve([{
-            url: streamUrl,
-            quality: 'HD',
-            format: isHLS ? 'm3u8' : 'mp4',
-            // We force the player to mirror the browser exactly
-            headers: {
-              'User-Agent': HEADERS['User-Agent'],
-              'Referer': 'https://einthusan.tv/',
-              'Origin': 'https://einthusan.tv',
-              'Accept': '*/*',
-              'Accept-Encoding': 'identity;q=1, *;q=0'
-            }
-          }]);
-        } else {
-          console.log('Fail: Regex missed the link');
-          resolve([]);
-        }
-      })
-      .catch(function (err) {
-        console.log('Fail: Fetch error ' + err);
+        resolve([{
+          url: pipedUrl, // This version carries its own authorization
+          quality: 'HD',
+          format: pipedUrl.indexOf('m3u8') !== -1 ? 'm3u8' : 'mp4',
+          headers: {
+            'User-Agent': UA,
+            'Referer': 'https://einthusan.tv/'
+          }
+        }]);
+      } else {
+        console.log('FAIL: No link in HTML');
         resolve([]);
-      });
+      }
+    })
+    .catch(function (err) {
+      console.log('FETCH ERROR: ' + err);
+      resolve([]);
+    });
   });
 }
 
