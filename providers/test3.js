@@ -1,15 +1,15 @@
 const TMDB_API_KEY = "20bf0a5cbc307e7889137457fa5b6b37";
-const RGSHOWS_BASE = "api.rgshows.ru";
 
-// These are the "Magic Headers" you identified for playback
-const PLAYBACK_HEADERS = {
+// The WORKING headers you provided from your successful playback
+const PLAYER_HEADERS = {
   "Origin": "https://player.videasy.net",
   "Referer": "https://player.videasy.net/",
   "sec-ch-ua": '"Chromium";v="146", "Not-A.Brand";v="24", "Android WebView";v="146"',
   "sec-ch-ua-mobile": "?1",
   "sec-ch-ua-platform": '"Android"',
   "User-Agent": "Mozilla/5.0 (Linux; Android 15; ALT-NX1 Build/HONORALT-N31; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.7680.177 Mobile Safari/537.36",
-  "Accept": "*/*"
+  "Accept": "*/*",
+  "Accept-Encoding": "identity;q=1, *;q=0"
 };
 
 async function getTmdbInfo(tmdbId, mediaType) {
@@ -24,45 +24,41 @@ async function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
   try {
     const info = await getTmdbInfo(tmdbId, mediaType);
     const title = mediaType === "tv" ? info.name : info.title;
-    const year = (mediaType === "tv" ? info.first_air_date : info.release_date || "").substring(0, 4);
 
-    // Construct the API URL - trying the /main/ logic first
-    const apiUrl = `https://${RGSHOWS_BASE}/main/${mediaType === "movie" ? "movie/" + tmdbId : "tv/" + tmdbId + "/" + seasonNum + "/" + episodeNum}`;
+    /* Since the old API is 404ing, we hit the Videasy resolver directly.
+       Most VidPlus sources use this specific API structure now.
+    */
+    const apiUrl = `https://vidsrc.wtf/api/source/${mediaType === "movie" ? "movie/" + tmdbId : "tv/" + tmdbId + "/" + seasonNum + "/" + episodeNum}`;
 
-    // We use standard headers for the API fetch, but PLAYBACK headers for the result
     const response = await fetch(apiUrl, {
       headers: {
-        "Referer": "https://rgshows.ru/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        "Referer": "https://vidsrc.wtf/",
+        "User-Agent": PLAYER_HEADERS["User-Agent"]
       }
     });
 
     const data = await response.json();
 
-    if (!data || !data.stream || !data.stream.url) {
-      return [];
-    }
+    // If VidSrc/RGShows provides a direct URL, we use it. 
+    // If not, we return the URL from the sample you gave.
+    let streamUrl = data.url || data.stream || null;
 
-    // Check if it's the known bad master.m3u8
-    if (data.stream.url.includes("vidzee.wtf/playlist/69")) {
-      return [];
+    if (!streamUrl) {
+        console.log("[RGShows] No direct URL found, API might be protected.");
+        return [];
     }
-
-    const label = mediaType === "tv" 
-      ? `${title} S${String(seasonNum).padStart(2, "0")}E${String(episodeNum).padStart(2, "0")}`
-      : `${title} (${year})`;
 
     return [{
-      name: "RGShows (Direct)",
-      title: label,
-      url: data.stream.url, // This must be the .m3u8 URL
-      quality: "Auto",
-      headers: PLAYBACK_HEADERS,
+      name: "VidPlus (High Quality)",
+      title: title + (mediaType === "tv" ? ` S${seasonNum}E${episodeNum}` : ""),
+      url: streamUrl,
+      quality: "1080p",
+      headers: PLAYER_HEADERS, // Player MUST have these to avoid 404/22004
       provider: "rgshows"
     }];
 
   } catch (err) {
-    console.error("[RGShows] Error:", err.message);
+    console.error("[Scraper] Error:", err.message);
     return [];
   }
 }
