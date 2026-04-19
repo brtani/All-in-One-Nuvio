@@ -1,4 +1,4 @@
-// VideoEasy Scraper - Optimized for Neon & Yoru
+// VideoEasy Scraper - Final Optimized Version for Neon, Yoru, Cypher & Raze
 const TMDB_API_KEY = '1c29a5198ee1854bd5eb45dbe8d17d92';
 const DECRYPT_API = 'https://enc-dec.app/api/dec-videasy';
 
@@ -10,10 +10,10 @@ const HEADERS = {
 };
 
 const SERVERS = {
-  'Neon': { url: 'https://api.videasy.net/myflixerzupcloud/sources-with-title', language: 'Original' },
-  'Yoru': { url: 'https://api.videasy.net/cdn/sources-with-title', language: 'Original', moviesOnly: true },
-  'Cypher': { url: 'https://api.videasy.net/moviebox/sources-with-title', language: 'Original' },
-  'Raze': { url: 'https://api.videasy.net/superflix/sources-with-title', language: 'Portuguese' }
+  'Neon': { url: 'https://api.videasy.net/myflixerzupcloud/sources-with-title' },
+  'Yoru': { url: 'https://api.videasy.net/cdn/sources-with-title', moviesOnly: true },
+  'Cypher': { url: 'https://api.videasy.net/moviebox/sources-with-title' },
+  'Raze': { url: 'https://api.videasy.net/superflix/sources-with-title' }
 };
 
 function request(url) {
@@ -39,20 +39,28 @@ function decrypt(text, id) {
 }
 
 function fetchFromServer(serverName, serverConfig, details, season, episode) {
-  // Skip TV shows for movie-only servers
   if (details.type === 'tv' && serverConfig.moviesOnly) return Promise.resolve([]);
 
-  // FIX: Double encoding the title. This is often required for Neon/Yoru.
-  // Space -> %20 -> %2520
-  const encodedTitle = encodeURIComponent(encodeURIComponent(details.title));
-
-  let url = `${serverConfig.url}?title=${encodedTitle}&mediaType=${details.type}&year=${details.year}&tmdbId=${details.id}&imdbId=${details.imdbId}`;
+  // Use a cleaner title - some servers fail if special characters are present
+  const cleanTitle = details.title.replace(/[^\w\s]/gi, '');
+  
+  // We use URLSearchParams which handles encoding properly without over-encoding
+  const params = new URLSearchParams({
+    title: cleanTitle,
+    mediaType: details.type,
+    year: details.year,
+    tmdbId: details.id,
+    imdbId: details.imdbId || ''
+  });
 
   if (details.type === 'tv') {
-    url += `&seasonId=${season}&episodeId=${episode}`;
+    params.append('seasonId', season);
+    params.append('episodeId', episode);
   }
 
-  return request(url)
+  const finalUrl = `${serverConfig.url}?${params.toString()}`;
+
+  return request(finalUrl)
     .then(raw => decrypt(raw, details.id))
     .then(decrypted => {
       if (!decrypted || !decrypted.sources) return [];
@@ -73,7 +81,7 @@ function fetchFromServer(serverName, serverConfig, details, season, episode) {
 
 function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
   const type = mediaType === 'tv' ? 'tv' : 'movie';
-  const tmdbUrl = `https://api.themoviedb.org/3/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
+  const tmdbUrl = `${TMDB_BASE_URL}/${type}/${tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`;
   
   return request(tmdbUrl).then(res => {
     const data = JSON.parse(res);
@@ -90,7 +98,13 @@ function getStreams(tmdbId, mediaType, seasonNum, episodeNum) {
     );
 
     return Promise.all(promises).then(results => {
-      return results.flat().filter((v, i, a) => a.findIndex(t => t.url === v.url) === i);
+      const flat = results.flat();
+      // Simple duplicate filter
+      const seen = new Set();
+      return flat.filter(item => {
+        const k = item.url;
+        return seen.has(k) ? false : seen.add(k);
+      });
     });
   }).catch(() => []);
 }
