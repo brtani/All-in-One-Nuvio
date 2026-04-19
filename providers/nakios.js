@@ -1,30 +1,29 @@
 // =============================================================
 // Provider Nuvio : Nakios.art (VF / VOSTFR / MULTI)
-// Version : 1.0.0
-// Stratégie :
-//   1. tmdbId → sources via API nakios (films et séries)
-//   2. On garde uniquement les URLs directes (non-proxy)
-//   3. Les URLs proxy nécessitent un compte premium nakios
+// Version : 3.4.0
+// Fix : URLs proxy → décoder url= (decodeURIComponent)
+//       et utiliser le domaine de l'URL décodée comme Referer
+//       xalaflix et darkibox acceptent leurs propres domaines
 // =============================================================
 
-var NAKIOS_API      = 'https://api.nakios.art/api';
-var NAKIOS_REFERER  = 'https://nakios.art/';
-var NAKIOS_UA       = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+var NAKIOS_API     = 'https://api.nakios.art/api';
+var NAKIOS_BASE    = 'https://nakios.art';
+var NAKIOS_REFERER = 'https://nakios.art/';
+var NAKIOS_UA      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// ---------------------------------------------------------------
-// Récupère les sources d'un FILM
-// GET /api/sources/movie/{tmdbId}
-// ---------------------------------------------------------------
-function fetchMovieSources(tmdbId) {
-  var url = NAKIOS_API + '/sources/movie/' + tmdbId;
-  console.log('[Nakios] Film sources: ' + url);
+function fetchSources(tmdbId, mediaType, season, episode) {
+  var url = mediaType === 'tv'
+    ? NAKIOS_API + '/sources/tv/' + tmdbId + '/' + (season || 1) + '/' + (episode || 1)
+    : NAKIOS_API + '/sources/movie/' + tmdbId;
+
+  console.log('[Nakios] Fetch sources: ' + url);
 
   return fetch(url, {
     method: 'GET',
     headers: {
       'User-Agent': NAKIOS_UA,
-      'Referer': NAKIOS_REFERER,
-      'Origin': 'https://nakios.art'
+      'Referer':    NAKIOS_REFERER,
+      'Origin':     NAKIOS_BASE
     }
   })
     .then(function(res) {
@@ -33,79 +32,94 @@ function fetchMovieSources(tmdbId) {
     })
     .then(function(data) {
       if (!data || !data.success || !data.sources || data.sources.length === 0) {
-        throw new Error('Aucune source disponible');
+        throw new Error('Aucune source');
       }
       return data.sources;
     });
 }
 
-// ---------------------------------------------------------------
-// Récupère les sources d'une SÉRIE
-// GET /api/sources/tv/{tmdbId}/{saison}/{episode}
-// ---------------------------------------------------------------
-function fetchTvSources(tmdbId, season, episode) {
-  var s   = season  || 1;
-  var e   = episode || 1;
-  var url = NAKIOS_API + '/sources/tv/' + tmdbId + '/' + s + '/' + e;
-  console.log('[Nakios] Série sources: ' + url);
+// Extrait le domaine origin depuis une URL (ex: https://zebi.xalaflix.design/...)
+// → https://zebi.xalaflix.design
+function extractOrigin(url) {
+  var match = url.match(/^(https?:\/\/[^\/]+)/);
+  return match ? match[1] : null;
+}
 
-  return fetch(url, {
-    method: 'GET',
-    headers: {
-      'User-Agent': NAKIOS_UA,
-      'Referer': NAKIOS_REFERER,
-      'Origin': 'https://nakios.art'
+// Résout une URL source :
+// - URL directe http → retournée telle quelle
+// - URL proxy relative /api/sources/proxy?url=ENCODED&s=xxx
+//   → décoder le paramètre url= avec decodeURIComponent
+//   → utiliser le domaine de l'URL décodée comme Referer/Origin
+function resolveSource(source) {
+  var rawUrl = source.url || '';
+
+  // URL directe
+  if (rawUrl.startsWith('http')) {
+    var format = (source.isM3U8 || rawUrl.indexOf('.m3u8') !== -1) ? 'm3u8' : 'mp4';
+    return {
+      url:     rawUrl,
+      format:  format,
+      referer: NAKIOS_REFERER,
+      origin:  NAKIOS_BASE
+    };
+  }
+
+  // URL proxy relative → extraire et décoder le paramètre url=
+  if (rawUrl.charAt(0) === '/') {
+    var urlMatch = rawUrl.match(/[?&]url=([^&]+)/);
+    if (!urlMatch) return null;
+
+    var decoded;
+    try {
+      decoded = decodeURIComponent(urlMatch[1]);
+    } catch (e) {
+      return null;
     }
-  })
-    .then(function(res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
-    .then(function(data) {
-      if (!data || !data.success || !data.sources || data.sources.length === 0) {
-        throw new Error('Aucune source disponible');
-      }
-      return data.sources;
-    });
+
+    if (!decoded || !decoded.startsWith('http')) return null;
+
+    var origin = extractOrigin(decoded);
+    if (!origin) return null;
+
+    return {
+      url:     decoded,
+      format:  'm3u8',
+      referer: origin + '/',
+      origin:  origin
+    };
+  }
+
+  return null;
 }
 
-// ---------------------------------------------------------------
-// Filtre et normalise les sources vers le format Nuvio
-// On garde uniquement les URLs directes (pas de proxy nakios)
-// ---------------------------------------------------------------
 function normalizeSources(sources) {
   var results = [];
 
   for (var i = 0; i < sources.length; i++) {
     var source = sources[i];
-    var url    = source.url || '';
 
-    // Ignorer les URLs vides
-    if (!url) continue;
+    if (source.isEmbed) continue;
 
-    // Compléter les URLs proxy relatives
-    if (url.indexOf('/api/sources/proxy') === 0) {
-      url = 'https://nakios.art' + url;
-    }
+    var lang    = (source.lang    || 'MULTI').toUpperCase();
+    var quality = source.quality  || 'HD';
+    var name    = source.name     || 'Nakios';
 
-    // Ignorer les URLs invalides
-    if (!url.startsWith('http')) continue;
+    var resolved = resolveSource(source);
+    if (!resolved) continue;
 
-    var lang    = source.lang    || 'MULTI';
-    var quality = source.quality || 'HD';
-    var isM3U8  = url.indexOf('.m3u8') !== -1 || source.isM3U8 === true || url.indexOf('proxy') !== -1;
-    var name    = source.name    || 'Nakios';
+    console.log('[Nakios] +source: ' + quality + ' | ' + lang + ' | ' + resolved.format +
+                ' | referer=' + resolved.referer + ' → ' + resolved.url.substring(0, 70));
 
     results.push({
       name:    'Nakios',
-      title:   name + ' | ' + lang,
-      url:     url,
+      title:   name + ' - ' + lang + ' ' + quality,
+      url:     resolved.url,
       quality: quality,
-      format:  isM3U8 ? 'm3u8' : 'mp4',
+      format:  resolved.format,
       headers: {
         'User-Agent': NAKIOS_UA,
-        'Referer':    'https://nakios.art/',
-        'Origin':     'https://nakios.art'
+        'Referer':    resolved.referer,
+        'Origin':     resolved.origin
       }
     });
   }
@@ -113,20 +127,13 @@ function normalizeSources(sources) {
   return results;
 }
 
-// ---------------------------------------------------------------
-// Fonction principale appelée par Nuvio
-// ---------------------------------------------------------------
 function getStreams(tmdbId, mediaType, season, episode) {
   console.log('[Nakios] START tmdbId=' + tmdbId + ' type=' + mediaType + ' S' + season + 'E' + episode);
 
-  var fetchSources = (mediaType === 'tv')
-    ? fetchTvSources(tmdbId, season, episode)
-    : fetchMovieSources(tmdbId);
-
-  return fetchSources
+  return fetchSources(tmdbId, mediaType, season, episode)
     .then(function(sources) {
       var results = normalizeSources(sources);
-      console.log('[Nakios] ' + results.length + ' source(s) directe(s) trouvée(s)');
+      console.log('[Nakios] ' + results.length + ' source(s) disponible(s)');
       return results;
     })
     .catch(function(err) {
@@ -135,9 +142,6 @@ function getStreams(tmdbId, mediaType, season, episode) {
     });
 }
 
-// ---------------------------------------------------------------
-// Export
-// ---------------------------------------------------------------
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { getStreams: getStreams };
 } else {
