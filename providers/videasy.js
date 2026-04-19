@@ -1,9 +1,9 @@
-// VideoEasy Scraper - Neon/Yoru Focused
+// VideoEasy Scraper - Final 2026 Optimization
 const TMDB_API_KEY = '1c29a5198ee1854bd5eb45dbe8d17d92';
 const DECRYPT_API = 'https://enc-dec.app/api/dec-videasy';
 
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
   'Accept': 'application/json, text/plain, */*',
   'Origin': 'https://player.videasy.net',
   'Referer': 'https://player.videasy.net/'
@@ -13,7 +13,11 @@ const SERVERS = {
   'Neon': { url: 'https://api.videasy.net/myflixerzupcloud/sources-with-title' },
   'Yoru': { url: 'https://api.videasy.net/cdn/sources-with-title', moviesOnly: true },
   'Cypher': { url: 'https://api.videasy.net/moviebox/sources-with-title' },
-  'Raze': { url: 'https://api.videasy.net/superflix/sources-with-title' }
+  'Reyna': { url: 'https://api.videasy.net/primewire/sources-with-title' },
+  'Omen': { url: 'https://api.videasy.net/onionplay/sources-with-title' },
+  'Breach': { url: 'https://api.videasy.net/m4uhd/sources-with-title' },
+  'Ghost': { url: 'https://api.videasy.net/primesrcme/sources-with-title' },
+  'Raze': { url: 'https://api.videasy.net/superflix/sources-with-title' } // Raze often rotates URLs
 };
 
 function getStreams(tmdbId, mediaType, season, episode) {
@@ -31,25 +35,22 @@ function getStreams(tmdbId, mediaType, season, episode) {
         type: type
       };
 
-      console.log(`[VideoEasy] Searching for: ${details.title} (${details.year})`);
-
       const promises = Object.keys(SERVERS).map(name => {
         const config = SERVERS[name];
         if (details.type === 'tv' && config.moviesOnly) return Promise.resolve([]);
 
-        // Construct URL manually to ensure exact parameter order
-        let url = `${config.url}?title=${encodeURIComponent(details.title)}&mediaType=${details.type}&year=${details.year}&tmdbId=${details.id}&imdbId=${details.imdbId}`;
+        // Build URL ensuring IMDB ID is included (crucial for Omen/Breach)
+        let url = `${config.url}?title=${encodeURIComponent(details.title)}` +
+                  `&mediaType=${details.type}&year=${details.year}` +
+                  `&tmdbId=${details.id}&imdbId=${details.imdbId || ''}`;
         
-        if (details.type === 'tv') {
-          url += `&seasonId=${season}&episodeId=${episode}`;
-        }
+        if (details.type === 'tv') url += `&seasonId=${season}&episodeId=${episode}`;
 
         return fetch(url, { headers: HEADERS })
           .then(res => res.text())
           .then(encryptedText => {
-            if (!encryptedText || encryptedText.includes('Not Found')) return [];
+            if (!encryptedText || encryptedText.length < 20 || encryptedText.startsWith('<!')) return [];
             
-            // Send to decryption
             return fetch(DECRYPT_API, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -68,14 +69,12 @@ function getStreams(tmdbId, mediaType, season, episode) {
                   'Referer': 'https://player.videasy.net/',
                   'Origin': 'https://player.videasy.net',
                   'User-Agent': HEADERS['User-Agent']
-                }
+                },
+                provider: 'videasy'
               }));
             });
           })
-          .catch(err => {
-            console.log(`[VideoEasy] ${name} failed:`, err.message);
-            return [];
-          });
+          .catch(() => []);
       });
 
       return Promise.all(promises).then(results => {
@@ -84,10 +83,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
         return flat.filter(item => seen.has(item.url) ? false : seen.add(item.url));
       });
     })
-    .catch(err => {
-      console.error("[VideoEasy] TMDB Fetch Error:", err.message);
-      return [];
-    });
+    .catch(() => []);
 }
 
 if (typeof module !== 'undefined') module.exports = { getStreams };
