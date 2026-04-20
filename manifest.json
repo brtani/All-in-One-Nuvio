@@ -511,13 +511,13 @@
       "contentLanguage": ["en"]
     },
     {
-      "id": "test2",
-      "name": "Test2",
-      "description": "Direct links via StreamFlix API",
+      "id": "multivid",
+      "name": "MultiVid",
+      "description": "MultiVid - Includes VidEasy, VidLink & VidSrc",
       "version": "1.0.0",
       "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
-      "filename": "providers/test2.js",
+      "filename": "providers/multivid.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
       "logo": "",
