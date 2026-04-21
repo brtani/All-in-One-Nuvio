@@ -135,7 +135,7 @@ function resolveVidmody(tmdbId, mediaType, season, episode) {
         .then(function (res) {
           if (res.status === 200) {
             return [streamObject(
-              "VidMody",
+              "Vidmody",
               displayTitle + " (VidMody)",
               targetUrl,
               "Auto",
@@ -204,7 +204,7 @@ function getStreams(tmdbId, mediaType, season, episode) {
   var resolvers = [
     resolveVidEasy,
     resolveVidLink,
-    resolveVidMody, // Added VidMody
+    resolveVidmody, // Added Vidmody
     resolveVidSrc
   ];
 
