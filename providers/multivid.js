@@ -136,7 +136,7 @@ function resolveVidmody(tmdbId, mediaType, season, episode) {
           if (res.status === 200) {
             return [streamObject(
               "Vidmody",
-              displayTitle + " (VidMody)",
+              displayTitle + " (Vidmody)",
               targetUrl,
               "Auto",
               { "Referer": "https://vidmody.com/", "User-Agent": "Mozilla/5.0" }
