@@ -15,7 +15,7 @@ const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 // Servidores em Português (Superflix, Overflix, VisãoCine)
 const SERVERS = {
-  'Superflix': {url: 'https://api2.videasy.net/superflix/sources-with-title',
+  'Superflix': {url: 'https://api.videasy.net/superflix/sources-with-title',
     language: 'Português'},
   'Overflix': {url: 'https://api2.videasy.net/overflix/sources-with-title',
     language: 'Português'},
