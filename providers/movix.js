@@ -1,76 +1,48 @@
 // =============================================================
 // Provider Nuvio : Movix (VF/VOSTFR français)
-// Version : 4.3.0 - Auto-détection via bundle JS de movix.health
-//           Triple API (purstream + cpasmal + fstream)
-//           + Darkino (Nightflix/darkibox) en bonus
+// Version : 4.4.0
+// - Domaine récupéré automatiquement depuis domains.json (GitHub)
+// - Fallback sur movix.cash si la lecture échoue
+//   Triple API (purstream + cpasmal + fstream)
+//   + Darkino (Nightflix/darkibox) en bonus
 // =============================================================
 
 var TMDB_KEY = 'f3d757824f08ea2cff45eb8f47ca3a1e';
-var MOVIX_HEALTH_URL = 'https://movix.health/';
+var DOMAINS_URL = 'https://raw.githubusercontent.com/wooodyhood/nuvio-repo/main/domains.json';
+var MOVIX_FALLBACK = 'cash';
 
-// Domaines à ignorer lors de l'extraction depuis le bundle
-var MOVIX_BLACKLIST = ['health', 'png', 'svg', 'com', 'support', 'news', 'media', 'website'];
-
-// Cache en mémoire pour éviter de re-détecter à chaque appel dans la même session
 var _cachedEndpoint = null;
 
-// Étape 1 : lit le HTML de movix.health et trouve l'URL du bundle JS
-function fetchBundleUrl() {
-  return fetch(MOVIX_HEALTH_URL, { redirect: 'follow' })
-    .then(function(res) { return res.text(); })
-    .then(function(html) {
-      var match = html.match(/src=["'](\/assets\/[^"']+\.js)["']/);
-      if (!match) throw new Error('Bundle JS introuvable dans movix.health');
-      var bundleUrl = 'https://movix.health' + match[1];
-      console.log('[Movix] Bundle trouvé: ' + bundleUrl);
-      return bundleUrl;
-    });
-}
+// ─── Récupération du domaine depuis GitHub ───────────────────
 
-// Étape 2 : télécharge le bundle et extrait tous les domaines movix.*
-function extractDomainsFromBundle(bundleUrl) {
-  return fetch(bundleUrl)
-    .then(function(res) { return res.text(); })
-    .then(function(js) {
-      var matches = js.match(/https?:\/\/movix\.([a-z]{2,10})/gi) || [];
-      var tlds = [];
-      var seen = {};
-      matches.forEach(function(url) {
-        var tld = url.replace(/https?:\/\/movix\./, '').toLowerCase();
-        if (!seen[tld] && MOVIX_BLACKLIST.indexOf(tld) === -1) {
-          seen[tld] = true;
-          tlds.push(tld);
-        }
-      });
-      if (tlds.length === 0) throw new Error('Aucun domaine trouvé dans le bundle');
-      console.log('[Movix] Domaines extraits du bundle: ' + tlds.join(', '));
-      return tlds;
-    });
-}
-
-// Étape 3 : probe chaque domaine en parallèle — le premier qui répond gagne
-// Détection complète : bundle → premier domaine de la liste (= le plus récent)
 function detectApi() {
   if (_cachedEndpoint) {
     console.log('[Movix] Endpoint en cache: ' + _cachedEndpoint.api);
     return Promise.resolve(_cachedEndpoint);
   }
 
-  return fetchBundleUrl()
-    .then(extractDomainsFromBundle)
-    .then(function(tlds) {
-      var tld = tlds[0]; // Premier = le plus récent dans le bundle
-      var endpoint = {
-        api: 'https://api.movix.' + tld,
+  return fetch(DOMAINS_URL)
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    })
+    .then(function(data) {
+      var tld = data.movix;
+      if (!tld) throw new Error('Domaine movix absent du fichier');
+      console.log('[Movix] Domaine récupéré: movix.' + tld);
+      _cachedEndpoint = {
+        api:     'https://api.movix.' + tld,
         referer: 'https://movix.' + tld + '/'
       };
-      console.log('[Movix] Domaine sélectionné: movix.' + tld);
-      _cachedEndpoint = endpoint;
-      return endpoint;
+      return _cachedEndpoint;
     })
     .catch(function(err) {
-      console.error('[Movix] Détection auto échouée: ' + (err.message || err));
-      return null;
+      console.warn('[Movix] Lecture domains.json échouée (' + (err.message || err) + '), fallback: movix.' + MOVIX_FALLBACK);
+      _cachedEndpoint = {
+        api:     'https://api.movix.' + MOVIX_FALLBACK,
+        referer: 'https://movix.' + MOVIX_FALLBACK + '/'
+      };
+      return _cachedEndpoint;
     });
 }
 
@@ -318,7 +290,6 @@ function tryFetchAll(apiBase, referer, tmdbId, mediaType, season, episode) {
 function getStreams(tmdbId, mediaType, season, episode) {
   console.log('[Movix] Fetching tmdbId=' + tmdbId + ' type=' + mediaType + ' S' + season + 'E' + episode);
 
-  // Détection automatique : bundle JS movix.health → domaines → probe
   return detectApi()
     .then(function(endpoint) {
       if (!endpoint) throw new Error('Détection endpoint échouée');
