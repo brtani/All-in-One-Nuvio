@@ -200,19 +200,6 @@
       "contentLanguage": ["en"] 
     },
     {
-      "id": "diziyou",
-      "name": "DiziYou",
-      "description": "Movies & Series in English & Turkish",
-      "version": "1.0.4",
-      "author": "MoOnCrOwN",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/diziyou.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/K8nYLrL3/diziyou.png",
-      "contentLanguage": ["en", "tr"]
-    },
-    {
       "id": "dooflix",
       "name": "DooFlix",
       "description": "Fast streaming provider with direct TMDB integration",
@@ -496,6 +483,19 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/4yVjQjpH/streamflix.png",
       "contentLanguage": ["en"]
+    },
+    {
+      "id": "toflix",
+      "name": "ToFlix",
+      "description": "Films & Séries in English and French",
+      "version": "1.0.0",
+      "author": "wooodyhood",
+      "supportedTypes": ["movie", "tv"],
+      "filename": "providers/toflix.js",
+      "enabled": true,
+      "formats": ["mp4", "m3u8"]
+      "logo": "https://i.postimg.cc/HkFFqm55/toflix.png",
+      "contentLanguage": ["en", "fr"],
     },
     {
       "id": "test",
