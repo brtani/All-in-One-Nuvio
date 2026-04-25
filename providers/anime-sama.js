@@ -1,9 +1,17 @@
 // ============================================================
 // Provider Nuvio : Anime-Sama (anime-sama.to)
-// Version      : 7.0.3 - sibnet chemin relatif corrige
+// Version      : 7.1.0
 // Moteur       : Promise chains UNIQUEMENT (Hermes / React Native)
+//                AUCUN async/await, AUCUN require() Node.js
 // Langues      : VF priorité, fallback VOSTFR
-// Sources      : epsAS (MP4 direct) > sendvid > vidmoly > sibnet > oneupload
+// Sources      : sendvid > vidmoly > sibnet > oneupload
+// Corrections  :
+//   - Regex recherche : slash final optionnel (slugs non trouvés)
+//   - Regex sibnet : caractères mal échappés (mp4 non extrait)
+//   - epsAS : serveurs anime-sama.fr hors ligne, skippés immédiatement
+//   - Sendvid : 6 patterns pour trouver le MP4 (video_source, source, file...)
+//   - Sibnet : Referer video.sibnet.ru obligatoire pour la lecture
+//   - Vidmoly : fallback vidmoly.me + désobfuscateur p,a,c,k,e,d
 // ============================================================
 
 var AS_FALLBACK = 'si';
@@ -154,7 +162,7 @@ function searchAnimeSama(query) {
     return r.text();
   }).then(function(html) {
     var results = [];
-    var re = /href=["']https?:\/\/anime-sama\.[a-z]+\/catalogue\/([a-z0-9_-]+)\/["']/gi;
+    var re = /href=["']https?:\/\/anime-sama\.[a-z]+\/catalogue\/([a-z0-9_-]+)\/?["']/gi;
     var m;
     while ((m = re.exec(html)) !== null) {
       if (results.indexOf(m[1]) === -1) results.push(m[1]);
@@ -255,44 +263,106 @@ function fetchEpisodes(slug, season) {
 
 // ─── Étape 4 : Extracteurs embed ─────────────────────────────
 
-// sendvid : src="https://videos2.sendvid.com/...mp4?validfrom=..."
+// sendvid : plusieurs patterns pour trouver le MP4
 function extractSendvid(embedUrl) {
-  return getText(embedUrl, 'https://sendvid.com/').then(function(html) {
+  // Normaliser l'URL embed
+  var url = embedUrl.indexOf('/embed/') !== -1
+    ? embedUrl
+    : embedUrl.replace(/sendvid\.com\/([a-z0-9]+)/i, 'sendvid.com/embed/$1');
+
+  return fetch(url, {
+    headers: { 'User-Agent': UA, 'Referer': 'https://sendvid.com/' }
+  }).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.text();
+  }).then(function(html) {
     var patterns = [
+      /video_source\s*:\s*["']([^"']+\.mp4[^"']*)["']/i,
       /["'](https?:\/\/videos\d*\.sendvid\.com\/[^"'>\s]+\.mp4[^"'>\s]*)["']/i,
-      /<source[^>]+src=["']([^"']+\.mp4[^"']*)["']/i
+      /source\s+src=["']([^"']+\.mp4[^"']*)["']/i,
+      /<source[^>]+src=["']([^"']+\.(?:mp4|m3u8)[^"']*)["']/i,
+      /file\s*:\s*["']([^"']+\.(?:mp4|m3u8)[^"']*)["']/i,
+      /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i
     ];
     for (var i = 0; i < patterns.length; i++) {
-      var match = patterns[i].exec(html);
-      if (match) return match[1];
+      var m = patterns[i].exec(html);
+      if (m) return m[1];
     }
     return null;
   }).catch(function() { return null; });
 }
 
-// sibnet : cherche mp4 dans le HTML
+// sibnet : récupère le chemin /v/HASH/ID.mp4 puis retourne l'URL complète
+// IMPORTANT : le Referer doit être video.sibnet.ru (pas anime-sama) pour que la vidéo soit lisible
 function extractSibnet(shellUrl) {
   return fetch(shellUrl, {
     headers: {
       'User-Agent': UA,
-      'Referer': 'https://anime-sama.to/',
+      'Referer': 'https://video.sibnet.ru/',
       'Accept': 'text/html'
     }
   }).then(function(r) { return r.text(); })
   .then(function(html) {
     // sibnet retourne src: "/v/HASH/ID.mp4" (chemin relatif)
-    var m = /srcs*:s*['"](/v/[^'"]+.mp4)['"]/.exec(html);
-    if (m) return 'https://video.sibnet.ru' + m[1];
-    return null;
+    var m = /src\s*:\s*['"](\/v\/[^'"]+\.mp4)['"]/.exec(html)
+         || /file\s*:\s*["'](\/v\/[^'"]+\.mp4)["']/.exec(html)
+         || /["']((?:https?:)?\/\/[^"'\s]+\.mp4[^"'\s]*)["']/.exec(html);
+    if (!m) return null;
+    var path = m[1];
+    if (path.startsWith('//')) return { url: 'https:' + path, referer: 'https://video.sibnet.ru/' };
+    if (path.startsWith('/')) return { url: 'https://video.sibnet.ru' + path, referer: 'https://video.sibnet.ru/' };
+    return { url: path, referer: 'https://video.sibnet.ru/' };
   }).catch(function() { return null; });
 }
 
-// vidmoly : JW Player → .m3u8 ou .mp4
+// Désobfuscateur p,a,c,k,e,d (utilisé par vidmoly et certains lecteurs)
+function unpackEval(code) {
+  try {
+    if (code.indexOf('p,a,c,k,e,d') === -1) return code;
+    var re = /eval\s*\(\s*function\s*\(\s*p\s*,\s*a\s*,\s*c\s*,\s*k\s*,\s*e\s*,\s*d\s*\)[\s\S]*?\}\s*\(([\s\S]*?)\)\s*\)/g;
+    var m = re.exec(code);
+    if (!m) return code;
+    var args = m[1].match(/^'([\s\S]*?)',\s*(\d+)\s*,\s*(\d+)\s*,\s*'([\s\S]*?)'\.split\('\|'\)/s);
+    if (!args) return code;
+    var payload = args[1].replace(/\\'/g, "'");
+    var base = parseInt(args[2]), count = parseInt(args[3]);
+    var words = args[4].split('|');
+    var toBase = function(n) {
+      return (n < base ? '' : toBase(Math.floor(n / base))) + ((n = n % base) > 35 ? String.fromCharCode(n + 29) : n.toString(36));
+    };
+    var dict = {};
+    while (count--) dict[toBase(count)] = words[count] || toBase(count);
+    return payload.replace(/\b\w+\b/g, function(w) { return dict[w] || w; });
+  } catch (e) { return code; }
+}
+
+// vidmoly : JW Player → .m3u8 ou .mp4, avec fallback vidmoly.me
 function extractVidmoly(embedUrl) {
-  return getText(embedUrl, 'https://vidmoly.to/').then(function(html) {
-    var m3 = /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i.exec(html);
+  // vidmoly.me est plus permissif que vidmoly.to
+  var url = embedUrl.replace(/vidmoly\.(net|to|ru|is)/i, 'vidmoly.me');
+  var ref = 'https://vidmoly.me/';
+
+  return fetch(url, {
+    headers: { 'User-Agent': UA, 'Referer': ref, 'Origin': 'https://vidmoly.me' }
+  }).then(function(r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.text();
+  }).then(function(html) {
+    // Suivre une éventuelle redirection JS
+    var redir = /window\.location\.(?:replace|href)\s*=\s*['"]([^'"]+)['"]/.exec(html);
+    if (redir && redir[1] !== url) {
+      return fetch(redir[1], {
+        headers: { 'User-Agent': UA, 'Referer': ref }
+      }).then(function(r2) { return r2.text(); });
+    }
+    return html;
+  }).then(function(html) {
+    if (html.indexOf('p,a,c,k,e,d') !== -1) html = unpackEval(html);
+    var m3 = /file\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i.exec(html)
+           || /["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/i.exec(html);
     if (m3) return { url: m3[1], fmt: 'm3u8' };
-    var m4 = /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i.exec(html);
+    var m4 = /file\s*:\s*["']([^"']+\.mp4[^"']*)["']/i.exec(html)
+           || /["'](https?:\/\/[^"']+\.mp4[^"']*)["']/i.exec(html);
     if (m4) return { url: m4[1], fmt: 'mp4' };
     return null;
   }).catch(function() { return null; });
@@ -323,8 +393,12 @@ function validateDirectUrl(url) {
 
 // Dispatch → { url, fmt } | null
 function extractUrl(embedUrl) {
-  // URL directe mp4/m3u8 (epsAS) — on valide qu'elle répond
+  // URL directe mp4/m3u8 (epsAS) — on skippe les domaines anime-sama.fr morts
   if (/\.(mp4|m3u8)(\?|$)/i.test(embedUrl)) {
+    if (embedUrl.indexOf('anime-sama.fr') !== -1) {
+      console.warn('[AnimeSama] epsAS ignore (serveurs anime-sama.fr hors ligne):', embedUrl);
+      return Promise.resolve(null);
+    }
     return validateDirectUrl(embedUrl).then(function(ok) {
       if (!ok) {
         console.warn('[AnimeSama] epsAS inaccessible:', embedUrl);
@@ -342,8 +416,10 @@ function extractUrl(embedUrl) {
     });
   }
   if (embedUrl.indexOf('sibnet.ru') !== -1) {
-    return extractSibnet(embedUrl).then(function(u) {
-      return u ? { url: u, fmt: 'mp4' } : null;
+    return extractSibnet(embedUrl).then(function(res) {
+      if (!res) return null;
+      // sibnet retourne {url, referer} — le referer est CRITIQUE pour la lecture
+      return { url: res.url, fmt: 'mp4', referer: res.referer };
     });
   }
   if (embedUrl.indexOf('vidmoly.to') !== -1) {
@@ -386,6 +462,8 @@ function buildStreams(epsData, epIndex, season, episode) {
 
     return extractUrl(embedUrl).then(function(res) {
       if (!res || !res.url) return null;
+      // Referer spécifique au lecteur (ex: sibnet exige son propre referer)
+      var streamReferer = res.referer || AS_REF;
       return {
         name:    'AnimeSama',
         title:   flag + ' ' + (LABELS[key] || key) + ' | S' + season + 'E' + episode,
@@ -394,8 +472,7 @@ function buildStreams(epsData, epIndex, season, episode) {
         format:  res.fmt,
         headers: {
           'User-Agent': UA,
-          'Referer': AS_REF,
-          'Origin': AS_BASE
+          'Referer': streamReferer
         },
         _prio:   PRIO[key] || 30
       };
