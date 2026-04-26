@@ -586,7 +586,7 @@
       "enabled": true,
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/1tHrBvzs/vixsrc.png",
-      "contentLanguage": ["en"]
+      "contentLanguage": ["en", "Ita"]
     },
     {
       "id": "onlykdrama",
