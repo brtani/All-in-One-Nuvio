@@ -520,7 +520,7 @@
       "filename": "providers/multivid.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "",
+      "logo": "https://i.postimg.cc/brxL7qg3/multivid.png",
       "contentLanguage": ["en"]
     },
     {
