@@ -433,6 +433,58 @@
       "contentLanguage": ["en"]
     },
     {
+      "id": "playimdb",
+      "name": "PlayIMDb (Movies)",
+      "description": "High-Speed Direct Streaming for Movies (IMDb ID Extract)",
+      "version": "1.1.4",
+      "author": "Mukesh",
+      "supportedTypes": ["movie"],
+      "filename": "providers/playimdb.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv", "m3u8"],
+      "logo": "https://www.imdb.com/favicon.ico",
+      "contentLanguage": ["en", "hi"]
+    },
+    { 
+      "id": "playimdb_series",
+      "name": "PlayIMDb (Series)",
+      "description": "High-Speed Direct Streaming for TV Shows (StreamIMDb Extract)",
+      "version": "1.2.1",
+      "author": "Mukesh",
+      "supportedTypes": ["tv"],
+      "filename": "providers/playimdb_v2.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv", "m3u8"],
+      "logo": "https://www.imdb.com/favicon.ico",
+      "contentLanguage": ["en", "hi"]
+    },
+    { 
+      "id": "playimdb",
+      "name": "PlayIMDb (Movies)",
+      "description": "High-Speed Direct Streaming for Movies (IMDb ID Extract)",
+      "version": "1.1.4",
+      "author": "Mukesh",
+      "supportedTypes": ["movie"],
+      "filename": "providers/playimdb.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv", "m3u8"],
+      "logo": "https://www.imdb.com/favicon.ico",
+      "contentLanguage": ["en", "hi"]
+    },
+    { 
+      "id": "playimdb_series",
+      "name": "PlayIMDb Premium (Series)",
+      "description": "High-Speed Direct Streaming for TV Shows (StreamIMDb Extract)",
+      "version": "1.2.1",
+      "author": "Mukesh",
+      "supportedTypes": ["tv"],
+      "filename": "providers/playimdb_v2.js",
+      "enabled": true,
+      "formats": ["mp4", "mkv", "m3u8"],
+      "logo": "https://www.imdb.com/favicon.ico",
+      "contentLanguage": ["en", "hi"]
+    },
+    {
       "id": "purstream",
       "name": "Purstream",
       "description": "Films and series in French (VF) / subtitled French (VOSTFR) / multi-language (MULTI) from purstream.art.",
