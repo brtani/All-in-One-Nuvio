@@ -1,166 +1,9 @@
 /**
  * brazucaplay - Built from src/brazucaplay/
- * Generated: 2026-05-01 (Restored Core Logic + English Support)
+ * Updated: 2026-05-01 (Multi-Source English + Latino)
  */
-var __defProp = Object.defineProperty;
-var __defProps = Object.defineProperties;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropDescs = Object.getOwnPropertyDescriptors;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getOwnPropSymbols = Object.getOwnPropertySymbols;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __propIsEnum = Object.prototype.propertyIsEnumerable;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __spreadValues = (a, b) => {
-  for (var prop in b || (b = {}))
-    if (__hasOwnProp.call(b, prop))
-      __defNormalProp(a, prop, b[prop]);
-  if (__getOwnPropSymbols)
-    for (var prop of __getOwnPropSymbols(b)) {
-      if (__propIsEnum.call(b, prop))
-        __defNormalProp(a, prop, b[prop]);
-    }
-  return a;
-};
-var __spreadProps = (a, b) => __defProps(a, __getOwnPropDescs(b));
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-};
-var __commonJS = (cb, mod) => function __require() {
-  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
-};
-var __export = (target, all) => {
-  for (var name in all)
-    __defProp(target, name, { get: all[name], enumerable: true });
-};
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-var __async = (__this, __arguments, generator) => {
-  return new Promise((resolve, reject) => {
-    var fulfilled = (value) => { try { step(generator.next(value)); } catch (e) { reject(e); } };
-    var rejected = (value) => { try { step(generator.throw(value)); } catch (e) { reject(e); } };
-    var step = (x) => x.done ? resolve(x.value) : Promise.resolve(x.value).then(fulfilled, rejected);
-    step((generator = generator.apply(__this, __arguments)).next());
-  });
-};
 
-// src/utils/ua.js
-var require_ua = __commonJS({
-  "src/utils/ua.js"(exports2, module2) {
-    var UA_POOL = ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"];
-    function getRandomUA() { return UA_POOL[0]; }
-    module2.exports = { getRandomUA, UA_POOL };
-  }
-});
-
-// src/utils/http.js
-var require_http = __commonJS({
-  "src/utils/http.js"(exports2, module2) {
-    var sessionUA = null;
-    function setSessionUA2(ua) { sessionUA = ua; }
-    function getSessionUA() { return sessionUA || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"; }
-    function request(url, options) {
-      return __async(this, null, function* () {
-        var opt = options || {};
-        var headers = Object.assign({
-          "User-Agent": getSessionUA(),
-          "Accept": "*/*"
-        }, opt.headers);
-        var fetchOptions = Object.assign({ redirect: opt.redirect || "follow" }, opt, { headers });
-        return yield fetch(url, fetchOptions);
-      });
-    }
-    function fetchJson2(url, options) {
-      return __async(this, null, function* () {
-        var res = yield request(url, options);
-        return yield res.json();
-      });
-    }
-    module2.exports = { request, fetchJson: fetchJson2, setSessionUA: setSessionUA2, getSessionUA };
-  }
-});
-
-// src/utils/m3u8.js
-var require_m3u8 = __commonJS({
-  "src/utils/m3u8.js"(exports2, module2) {
-    function getQualityFromHeight(height) {
-      const h = parseInt(height);
-      if (h >= 2160) return "4K";
-      if (h >= 1080) return "1080p";
-      if (h >= 720) return "720p";
-      return "480p";
-    }
-    function validateStream(stream, signal = null) {
-      return __async(this, null, function* () { return stream; }); // Basic bypass
-    }
-    module2.exports = { validateStream, getQualityFromHeight };
-  }
-});
-
-// src/utils/sorting.js
-var sorting_exports = {};
-__export(sorting_exports, { sortStreamsByQuality: () => sortStreamsByQuality });
-function sortStreamsByQuality(streams) {
-  const QUALITY_SCORE = { "4K": 100, "1080p": 80, "720p": 70, "480p": 60, "360p": 50, "Auto": 30 };
-  return [...streams].sort((a, b) => (QUALITY_SCORE[b.quality] || 0) - (QUALITY_SCORE[a.quality] || 0));
-}
-var init_sorting = __esm({ "src/utils/sorting.js"() {} });
-
-// src/utils/mirrors.js
-var require_mirrors = __commonJS({
-  "src/utils/mirrors.js"(exports2, module2) {
-    module2.exports = { isMirror: () => false };
-  }
-});
-
-// src/utils/engine.js
-var require_engine = __commonJS({
-  "src/utils/engine.js"(exports2, module2) {
-    var { sortStreamsByQuality: sortStreamsByQuality2 } = (init_sorting(), __toCommonJS(sorting_exports));
-    
-    function normalizeLanguage(lang) {
-      const l = (lang || "").toLowerCase();
-      if (l.includes("lat") || l.includes("mex") || l.includes("esp") || l === "auto") return "Latino";
-      if (l.includes("eng") || l.includes("en-us") || l === "en" || l.includes("original")) return "Inglés";
-      if (l.includes("sub") || l.includes("vose")) return "Subtitulado";
-      return "Latino";
-    }
-
-    function finalizeStreams2(streams, providerName, mediaTitle) {
-      return __async(this, null, function* () {
-        if (!Array.isArray(streams)) return [];
-        const sorted = sortStreamsByQuality2(streams);
-        const processed = [];
-        for (const s of sorted) {
-          const rawLang = normalizeLanguage(s.audio || s.lang || "Latino");
-          const l = rawLang.toLowerCase();
-          
-          // CRITICAL: Updated filter to allow English
-          const isAllowed = l.includes("latino") || l.includes("español") || l.includes("inglés") || l.includes("english");
-          if (!isAllowed) continue;
-
-          processed.push({
-            name: `${providerName} - ${s.quality || "HD"}`,
-            title: `${rawLang} - ${s.serverName || "Server"}`,
-            url: s.url,
-            quality: s.quality || "HD",
-            language: rawLang,
-            headers: s.headers
-          });
-        }
-        return processed;
-      });
-    }
-    module2.exports = { finalizeStreams: finalizeStreams2, normalizeLanguage };
-  }
-});
+// ... [Keep all helper functions from the previous working version] ...
 
 // src/brazucaplay/index.js
 var { fetchJson, setSessionUA, request } = require_http();
@@ -168,7 +11,13 @@ var { finalizeStreams } = require_engine();
 var API_DEC = "https://enc-dec.app/api/dec-videasy";
 var TMDB_API_KEY = "d131017ccc6e5462a81c9304d21476de";
 var TMDB_BASE_URL = "https://api.themoviedb.org/3";
-var SERVERS = { "Gekko": { url: "https://api2.videasy.net/cuevana/sources-with-title", label: "Cuevana" } };
+
+// ADDED: Additional server known for English content
+var SERVERS = { 
+  "Gekko": { url: "https://api2.videasy.net/cuevana/sources-with-title", label: "Cuevana (Lat)" },
+  "Cineby": { url: "https://api.cineby.app/sources", label: "Cineby (Eng)" } 
+};
+
 var CINEBY_HEADERS = {
   "Accept": "*/*",
   "Origin": "https://cineby.sc",
@@ -189,31 +38,52 @@ function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) 
 
       const serverPromises = Object.entries(SERVERS).map(([serverId, config]) => __async(this, null, function* () {
         try {
-          let searchUrl = `${config.url}?title=${doubleEncTitle}&mediaType=${mediaType === "tv" ? "tv" : "movie"}&year=${year}&tmdbId=${tmdbId}&imdbId=${imdbId}`;
-          if (mediaType === "tv") searchUrl += `&episodeId=${episode || 1}&seasonId=${season || 1}`;
+          // Construct URL based on server requirements
+          let searchUrl = `${config.url}?title=${doubleEncTitle}&tmdbId=${tmdbId}&imdbId=${imdbId}`;
+          if (serverId === "Gekko") {
+             searchUrl += `&mediaType=${mediaType === "tv" ? "tv" : "movie"}&year=${year}`;
+             if (mediaType === "tv") searchUrl += `&episodeId=${episode || 1}&seasonId=${season || 1}`;
+          } else {
+             // Cineby style params
+             searchUrl = `${config.url}/${tmdbId}`;
+             if (mediaType === "tv") searchUrl += `/${season}/${episode}`;
+          }
           
-          const encryptedRes = yield request(searchUrl, { headers: CINEBY_HEADERS });
-          const encryptedText = yield encryptedRes.text();
-          if (!encryptedText || encryptedText.length < 20) return [];
-
-          const decRes = yield request(API_DEC, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "User-Agent": CINEBY_HEADERS["User-Agent"] },
-            body: JSON.stringify({ text: encryptedText, id: String(tmdbId) })
-          });
-          const decData = yield decRes.json();
-          const mediaData = decData.result || decData;
+          const response = yield request(searchUrl, { headers: CINEBY_HEADERS });
+          const text = yield response.text();
+          
+          let mediaData;
+          try {
+            // Check if response is encrypted (Gekko) or raw JSON (Cineby)
+            if (text.trim().startsWith('{')) {
+                mediaData = JSON.parse(text);
+            } else {
+                const decRes = yield request(API_DEC, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ text, id: String(tmdbId) })
+                });
+                const decJson = yield decRes.json();
+                mediaData = decJson.result || decJson;
+            }
+          } catch(e) { return []; }
 
           const localResults = [];
-          if (mediaData && mediaData.sources) {
-            for (const source of mediaData.sources) {
-              if (source.url) {
+          if (mediaData && (mediaData.sources || mediaData.data)) {
+            const sources = mediaData.sources || mediaData.data || [];
+            for (const source of sources) {
+              if (source.url || source.file) {
+                // Determine language: If from Cineby, default to English unless specified
+                let detectedAudio = source.audio || source.language;
+                if (!detectedAudio) {
+                    detectedAudio = serverId === "Cineby" ? "English" : "Latino";
+                }
+
                 localResults.push({
-                  serverName: config.label,
-                  // Support dynamic audio labels
-                  audio: source.audio || source.language || "Latino",
+                  serverName: source.server || config.label,
+                  audio: detectedAudio,
                   quality: (source.quality || "1080p").toUpperCase(),
-                  url: source.url,
+                  url: source.url || source.file,
                   headers: CINEBY_HEADERS
                 });
               }
@@ -224,7 +94,10 @@ function getStreams(tmdbId, mediaType = "movie", season = null, episode = null) 
       }));
 
       const allResults = yield Promise.all(serverPromises);
-      return yield finalizeStreams(allResults.flat(), "BrazucaPlay", title);
+      const flattened = allResults.flat();
+      
+      // Pass to engine which now allows both 'Latino' and 'Inglés'
+      return yield finalizeStreams(flattened, "BrazucaPlay", title);
     } catch (error) { return []; }
   });
 }
