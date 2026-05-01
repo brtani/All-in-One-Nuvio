@@ -1,6 +1,6 @@
 /**
  * 4KHDHub - Built from src/4KHDHub/
- * Final Polish: Fingerprint-based Deduplication & post-resolve filtering.
+ * Final Polish: Fingerprint-based Deduplication & post-resolve filtering
  */
 var __create = Object.create;
 var __defProp = Object.defineProperty;
