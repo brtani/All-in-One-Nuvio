@@ -2,33 +2,33 @@
   "name": "D3adlyRocket",
   "version": "1.0.0",
   "scrapers": [
-    { 
-      "id": "4khdhub",
-      "name": "4khdhub",
-      "description": "4KHDHub direct links",
-      "version": "1.0.1",
+    {
+      "id": "vidsrc",
+      "name": "VidSrc",
+      "description": "Vidsrc - The best place to watch movies and TV shows online for free. Stream in 1080p HD",
+      "version": "1.0.0",
       "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
-      "filename": "providers/4khdhub.js",
+      "filename": "providers/vidsrc.js",
       "enabled": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/DZpW6Xfb/4khdhub.png",
+      "logo": "https://i.postimg.cc/ncMLBsLJ/vidsrc.png",
       "contentLanguage": ["en"]
     },
     {
-      "id": "allwish",
-      "name": "🌟 All-Wish",
-      "description": "All-Wish TV episodes via All-Wish servers",
-      "version": "1.0.1",
-      "author": "Kabir",
+      "id": "vixsrc",
+      "name": "VixSrc",
+      "description": "VixSrc - The best place to watch movies and TV shows online for free. Stream in 1080p HD",
+      "version": "1.0.0",
+      "author": "Nuvio Team",
       "supportedTypes": ["movie", "tv"],
-      "filename": "providers/allwish.js",
+      "filename": "providers/vixsrc.js",
       "enabled": true,
-      "limited": true,
       "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/WpFW45WQ/allwish.png",
-      "contentLanguage": ["en", "ja"]
+      "logo": "https://i.postimg.cc/1tHrBvzs/vixsrc.png",
+      "contentLanguage": ["en", "Ita"]
     },
+
     {
       "id": "allmovieland",
       "name": "AllMovieLand",
@@ -54,19 +54,6 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/0NvGzFyK/castle.png",
       "contentLanguage": ["en"]
-    },
-    {
-      "id": "cinemacity",
-      "name": "CinemaCity",
-      "description": "Multi Language Provider",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/cinemacity.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/XYjKhS3b/cinemacity.png",
-      "contentLanguage": ["en", "hi", "ar"]
     },
     {
       "id": "cinestream",
@@ -119,18 +106,6 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/59H1DmRk/dooflix.png",
       "contentLanguage": ["en", "es"]
-    },
-    {
-      "id": "flixindia",
-      "name": "FlixIndia",
-      "description": "Streaming provider for FlixIndia",
-      "version": "1.0.0",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/flixindia.js",
-      "enabled": true,
-      "formats": ["mkv"],
-      "logo": "https://i.postimg.cc/4xSPpSbb/onepieceskull.png",
-      "contentLanguage": ["en", "hi"]
     },
     {
       "id": "fmovies",
@@ -198,58 +173,6 @@
       "contentLanguage": ["en", "hi", "ta", "te"]  
     },
     {
-      "id": "movieblast",
-      "name": "MovieBlast",
-      "description": "MovieBlast - Hindi, Tamil, Telugu & English Movies/Series with multi-quality streams",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/movieblast.js",
-      "enabled": true,
-      "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "https://i.postimg.cc/qqkLSyhN/movieblast.png",
-      "contentLanguage": ["en", "hi", "ta", "te"]  
-    },
-    {
-      "id": "moviesdrive",
-      "name": "MoviesDrive",
-      "description": "MoviesDrive - Movies and TV shows with multiple streaming servers",
-      "version": "2.0.0",
-      "author": "JK",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "src/providers/moviesdrive.js",
-      "enabled": true,
-      "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "https://i.postimg.cc/bwDbhq9q/moviesdrive.png",
-      "contentLanguage": ["en", "hi"]
-    },
-    {
-      "id": "moviesmod",
-      "name": "MoviesMod",
-      "description": "Movie and TV show streams from MoviesMod with multiple quality options",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/moviesmod.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8", "mkv"],
-      "logo": "https://i.postimg.cc/YqWDJtWW/moviesmod.png",
-      "contentLanguage": ["en"]
-    },
-    {
-      "id": "movies4u",
-      "name": "Movies4u",
-      "description": "Auto-generated description for Movies4u",
-      "version": "1.0.1",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie"],
-      "filename": "src/providers/movies4u.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/J0QG1QhQ/movies4u.jpg",
-      "contentLanguage": ["en", "hi", "ta"]
-    },
-    {
       "id": "movix",
       "name": "Movix VF",
       "description": "Movies and TV series in English & French (dubbed/subtitled)",
@@ -261,19 +184,6 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/XYrPQm87/movix.png",
       "contentLanguage": ["en", "fr"]
-    },
-    {
-      "id": "netmirror",
-      "name": "Netmirror",
-      "description": "Streaming links from Netmirror (Netflix, Prime, Disney etc).",
-      "version": "1.0.0",
-      "author": "Sanchit (@S4NCHITT) — Murph's Streams",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/netmirror.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/L64M3bYV/netmirror.png",
-      "contentLanguage": ["en"]
     },
     {
       "id": "playimdb",
@@ -443,32 +353,6 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/7LHYMtVV/videasy.png",
       "contentLanguage": ["en"]
-    },
-    {
-      "id": "vidsrc",
-      "name": "VidSrc",
-      "description": "Vidsrc - The best place to watch movies and TV shows online for free. Stream in 1080p HD",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/vidsrc.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/ncMLBsLJ/vidsrc.png",
-      "contentLanguage": ["en"]
-    },
-    {
-      "id": "vixsrc",
-      "name": "VixSrc",
-      "description": "VixSrc - The best place to watch movies and TV shows online for free. Stream in 1080p HD",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/vixsrc.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/1tHrBvzs/vixsrc.png",
-      "contentLanguage": ["en", "Ita"]
     },
     {
       "id": "onetouchtv",
