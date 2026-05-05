@@ -55,19 +55,6 @@
       "contentLanguage": ["en", "hi", "ar"]
     },
     {
-      "id": "cinestream",
-      "name": "CineStream",
-      "description": "Multi Language Provider",
-      "version": "1.0.0",
-      "author": "Kabir",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/cinestream.js",
-      "enabled": true,
-      "formats": ["mp4", "m3u8"],
-      "logo": "https://i.postimg.cc/0NhjWWqT/cinestream.png",
-      "contentLanguage": ["en", "hi"]
-    },
-    {
       "id": "dahmermovies",
       "name": "Dahmermovies",
       "description": "1080p Movies from Dahmermovies",
@@ -183,19 +170,6 @@
       "logo": "https://i.postimg.cc/bJnfnzHS/hdmovie2.png",
       "contentLanguage": ["hi", "en"]
     },
-    {
-      "id": "isaidub",
-      "name": "Isaidub",
-      "description": "Tamil Dubbed Movies",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie"],
-      "filename": "providers/isaidub.js",
-      "enabled": true,
-      "formats": ["m3u8"],
-      "logo": "https://i.postimg.cc/0jMv4cQH/isaidub.png",
-      "contentLanguage": ["ta"]
-    },   
     {
       "id": "lamovie",
       "name": "LA.Movie",
@@ -351,19 +325,6 @@
       "formats": ["mp4", "m3u8"],
       "logo": "https://i.postimg.cc/kXNS9837/rgshows.png",
       "contentLanguage": ["en"]
-    },
-    {
-      "id": "showbox",
-      "name": "ShowBox",
-      "description": "ShowBox streaming with multiple quality options and versions",
-      "version": "1.0.0",
-      "author": "Nuvio Team",
-      "supportedTypes": ["movie", "tv"],
-      "filename": "providers/showbox.js",
-      "enabled": true,
-      "formats": ["mp4", "mkv", "m3u8"],
-      "logo": "https://i.postimg.cc/8c5XGzsx/showbox.png",
-      "contentLanguage": ["en"] 
     },
     {
       "id": "streamflix",
