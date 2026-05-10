@@ -1,10 +1,8 @@
 // =============================================================
 // Provider Nuvio : Movix (VF/VOSTFR français)
-// Version : 4.4.0
-// - Domaine récupéré automatiquement depuis domains.json (GitHub)
-// - Fallback sur movix.cash si la lecture échoue
-//   Triple API (purstream + cpasmal + fstream)
-//   + Darkino (Nightflix/darkibox) en bonus
+// Version : 4.6.0
+// - Added: ⏱️ Duration & Movie Year support
+// - Layout: Header (Bold) | Line 1 (Identity) | Line 2 (Specs)
 // =============================================================
 
 var TMDB_KEY = 'f3d757824f08ea2cff45eb8f47ca3a1e';
@@ -13,296 +11,182 @@ var MOVIX_FALLBACK = 'cash';
 
 var _cachedEndpoint = null;
 
-// ─── Récupération du domaine depuis GitHub ───────────────────
+// ─── TMDB Helpers (Updated for Year & Duration) ──────────────
+
+function getTmdbMetadata(tmdbId, type) {
+    var url = 'https://api.themoviedb.org/3/' + (type === 'tv' ? 'tv' : 'movie') + '/' + tmdbId + '?api_key=' + TMDB_KEY + '&language=en-US';
+    return fetch(url)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            var date = data.release_date || data.first_air_date || "";
+            return {
+                name: data.title || data.name || "Movix",
+                year: date ? date.split('-')[0] : "",
+                duration: (type === 'movie' && data.runtime) ? data.runtime + ' min' : (type === 'tv' && data.episode_run_time && data.episode_run_time.length > 0 ? data.episode_run_time[0] + ' min' : "")
+            };
+        })
+        .catch(function() { return { name: "Movix", year: "", duration: "" }; });
+}
+
+function getEpisodeInfo(tmdbId, season, episode) {
+    if (!tmdbId || !season || !episode) return Promise.resolve(null);
+    var url = 'https://api.themoviedb.org/3/tv/' + tmdbId + '/season/' + season + '/episode/' + episode + '?api_key=' + TMDB_KEY + '&language=en-US';
+    return fetch(url)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            return {
+                name: data.name || null,
+                duration: data.runtime ? data.runtime + ' min' : null
+            };
+        })
+        .catch(function() { return null; });
+}
+
+// ─── UI / Formatting (Updated for 2-Line Layout) ─────────────
+
+function buildTitle(meta, res, lang, format, size, extra, season, episode, epInfo) {
+    var qIcon = (res.includes('2160') || res.includes('4K')) ? '💎' : '📺';
+    var lIcon = '🇫🇷';
+    var displayLang = 'VF';
+
+    var check = (lang + " " + res).toUpperCase();
+    if (check.indexOf('MULTI') !== -1) {
+        lIcon = '🌍';
+        displayLang = 'MULTI';
+    } else if (check.indexOf('VOST') !== -1) {
+        lIcon = '🔡';
+        displayLang = 'VOSTFR';
+    }
+
+    // --- Line 1: Identity ---
+    var line1 = '🎬 ';
+    if (season && episode) {
+        line1 += 'S' + season + ' E' + episode + (epInfo && epInfo.name ? ' - ' + epInfo.name : '') + ' | ' + meta.name;
+    } else {
+        line1 += meta.name + (meta.year ? ' - ' + meta.year : '');
+    }
+
+    // --- Line 2: Technical Specs ---
+    var columns = [
+        qIcon + ' ' + res,
+        lIcon + ' ' + displayLang,
+        '🎞️ ' + (format || 'M3U8').toUpperCase()
+    ];
+
+    if (size) columns.push('💾 ' + size);
+    if (extra) columns.push('🛠️ ' + extra);
+
+    // Duration Logic
+    var finalDur = (epInfo && epInfo.duration) ? epInfo.duration : meta.duration;
+    if (finalDur) columns.push('⏱️ ' + finalDur);
+
+    return line1 + '\n' + columns.join(' | ');
+}
+
+// ─── Network Logic (Untouched) ───────────────────────────────
 
 function detectApi() {
-  if (_cachedEndpoint) {
-    console.log('[Movix] Endpoint en cache: ' + _cachedEndpoint.api);
-    return Promise.resolve(_cachedEndpoint);
-  }
-
-  return fetch(DOMAINS_URL)
-    .then(function(res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    })
-    .then(function(data) {
-      var tld = data.movix;
-      if (!tld) throw new Error('Domaine movix absent du fichier');
-      console.log('[Movix] Domaine récupéré: movix.' + tld);
-      _cachedEndpoint = {
-        api:     'https://api.movix.' + tld,
-        referer: 'https://movix.' + tld + '/'
-      };
-      return _cachedEndpoint;
-    })
-    .catch(function(err) {
-      console.warn('[Movix] Lecture domains.json échouée (' + (err.message || err) + '), fallback: movix.' + MOVIX_FALLBACK);
-      _cachedEndpoint = {
-        api:     'https://api.movix.' + MOVIX_FALLBACK,
-        referer: 'https://movix.' + MOVIX_FALLBACK + '/'
-      };
-      return _cachedEndpoint;
-    });
+    if (_cachedEndpoint) return Promise.resolve(_cachedEndpoint);
+    return fetch(DOMAINS_URL)
+        .then(function(res) { return res.ok ? res.json() : Promise.reject(); })
+        .then(function(data) {
+            var tld = data.movix || MOVIX_FALLBACK;
+            _cachedEndpoint = { api: 'https://api.movix.' + tld, referer: 'https://movix.' + tld + '/' };
+            return _cachedEndpoint;
+        })
+        .catch(function() {
+            _cachedEndpoint = { api: 'https://api.movix.' + MOVIX_FALLBACK, referer: 'https://movix.' + MOVIX_FALLBACK + '/' };
+            return _cachedEndpoint;
+        });
 }
 
 function resolveRedirect(url, referer) {
-  return fetch(url, {
-    method: 'GET',
-    redirect: 'follow',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': referer
-    }
-  }).then(function(res) { return res.url || url; })
-    .catch(function() { return url; });
+    return fetch(url, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': referer } })
+        .then(function(res) { return res.url || url; }).catch(function() { return url; });
 }
 
 function resolveEmbed(embedUrl, referer) {
-  return fetch(embedUrl, {
-    method: 'GET',
-    redirect: 'follow',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Referer': referer
-    }
-  })
-    .then(function(res) { return res.text(); })
-    .then(function(html) {
-      var patterns = [
-        /file\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i,
-        /source\s+src=["']([^"']+\.m3u8[^"']*)["']/i,
-        /["']([^"']*\.m3u8(?:\?[^"']*)?)["']/i,
-        /file\s*:\s*["']([^"']+\.mp4[^"']*)["']/i
-      ];
-      for (var i = 0; i < patterns.length; i++) {
-        var match = html.match(patterns[i]);
-        if (match) {
-          var url = match[1];
-          if (url.startsWith('//')) url = 'https:' + url;
-          if (url.startsWith('http')) return url;
-        }
-      }
-      return null;
-    })
-    .catch(function() { return null; });
-}
-
-// API 1 : Purstream — m3u8 direct
-function fetchPurstream(apiBase, referer, tmdbId, mediaType, season, episode) {
-  var url = mediaType === 'tv'
-    ? apiBase + '/api/purstream/tv/' + tmdbId + '/stream?season=' + (season || 1) + '&episode=' + (episode || 1)
-    : apiBase + '/api/purstream/movie/' + tmdbId + '/stream';
-
-  console.log('[Movix] Purstream: ' + url);
-  return fetch(url, {
-    method: 'GET',
-    headers: { 'Referer': referer, 'Origin': referer.replace(/\/$/, ''), 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-  })
-    .then(function(res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-    .then(function(data) {
-      if (!data || !data.sources || data.sources.length === 0) throw new Error('Vide');
-      return data.sources;
-    });
-}
-
-// API 2 : Cpasmal — voe, netu, doodstream, vidoza (VF/VOSTFR)
-function fetchCpasmal(apiBase, referer, tmdbId, mediaType, season, episode) {
-  var url = mediaType === 'tv'
-    ? apiBase + '/api/cpasmal/tv/' + tmdbId + '/' + (season || 1) + '/' + (episode || 1)
-    : apiBase + '/api/cpasmal/movie/' + tmdbId;
-
-  console.log('[Movix] Cpasmal: ' + url);
-  return fetch(url, {
-    method: 'GET',
-    headers: { 'Referer': referer, 'Origin': referer.replace(/\/$/, ''), 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-  })
-    .then(function(res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-    .then(function(data) {
-      if (!data || !data.links) throw new Error('Vide');
-      var sources = [];
-      var langs = ['vf', 'vostfr'];
-      langs.forEach(function(lang) {
-        if (data.links[lang]) {
-          data.links[lang].forEach(function(link) {
-            sources.push({ url: link.url, name: 'Movix ' + lang.toUpperCase(), player: link.server, lang: lang });
-          });
-        }
-      });
-      if (sources.length === 0) throw new Error('Aucune source');
-      return sources;
-    });
-}
-
-// API 3 : FStream — vidzy, fsvid, uqload (VF/VOSTFR)
-function fetchFstream(apiBase, referer, tmdbId, mediaType, season, episode) {
-  var url = mediaType === 'tv'
-    ? apiBase + '/api/fstream/tv/' + tmdbId + '/season/' + (season || 1)
-    : apiBase + '/api/fstream/movie/' + tmdbId;
-
-  console.log('[Movix] FStream: ' + url);
-  return fetch(url, {
-    method: 'GET',
-    headers: { 'Referer': referer, 'Origin': referer.replace(/\/$/, ''), 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-  })
-    .then(function(res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-    .then(function(data) {
-      if (!data || !data.episodes) throw new Error('Vide');
-      var ep = String(episode || 1);
-      var episodeData = data.episodes[ep];
-      if (!episodeData) throw new Error('Épisode non trouvé');
-      var sources = [];
-      ['VF', 'VOSTFR'].forEach(function(lang) {
-        if (episodeData.languages[lang]) {
-          episodeData.languages[lang].forEach(function(source) {
-            sources.push({ url: source.url, name: 'Movix FStream ' + lang, player: source.player, lang: lang });
-          });
-        }
-      });
-      if (sources.length === 0) throw new Error('Aucune source');
-      return sources;
-    });
-}
-
-// API 4 : Darkino (Nightflix) — m3u8 directs haute qualité via darkibox
-function fetchDarkino(apiBase, referer, tmdbId, mediaType, season, episode) {
-  var headers = {
-    'Referer': referer,
-    'Origin': referer.replace(/\/$/, ''),
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-  };
-  var tmdbType = mediaType === 'tv' ? 'tv' : 'movie';
-
-  return fetch('https://api.themoviedb.org/3/' + tmdbType + '/' + tmdbId + '?language=fr-FR&api_key=' + TMDB_KEY)
-    .then(function(res) { if (!res.ok) throw new Error('TMDB ' + res.status); return res.json(); })
-    .then(function(tmdb) {
-      var title = tmdb.title || tmdb.name || tmdb.original_title || tmdb.original_name;
-      if (!title) throw new Error('Titre TMDB introuvable');
-      console.log('[Movix] Darkino titre: "' + title + '"');
-
-      return fetch(apiBase + '/api/search?title=' + encodeURIComponent(title), { method: 'GET', headers: headers })
-        .then(function(res) { if (!res.ok) throw new Error('Search ' + res.status); return res.json(); })
-        .then(function(data) {
-          var results = (data && data.results) ? data.results : [];
-          var match = null;
-          for (var i = 0; i < results.length; i++) {
-            if (String(results[i].tmdb_id) === String(tmdbId) && results[i].have_streaming === 1) { match = results[i]; break; }
-          }
-          if (!match) {
-            for (var j = 0; j < results.length; j++) {
-              if (String(results[j].tmdb_id) === String(tmdbId)) { match = results[j]; break; }
+    return fetch(embedUrl, { method: 'GET', redirect: 'follow', headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': referer } })
+        .then(function(res) { return res.text(); })
+        .then(function(html) {
+            var patterns = [/file\s*:\s*["']([^"']+\.m3u8[^"']*)["']/i, /source\s+src=["']([^"']+\.m3u8[^"']*)["']/i, /["']([^"']*\.m3u8(?:\?[^"']*)?)["']/i];
+            for (var i = 0; i < patterns.length; i++) {
+                var match = html.match(patterns[i]);
+                if (match) return match[1].startsWith('//') ? 'https:' + match[1] : match[1];
             }
-          }
-          if (!match) throw new Error('tmdb_id ' + tmdbId + ' non trouvé');
-          console.log('[Movix] Darkino ID interne: ' + match.id);
+            return null;
+        }).catch(function() { return null; });
+}
 
-          var downloadUrl = apiBase + '/api/films/download/' + match.id;
-          if (mediaType === 'tv' && season && episode) downloadUrl += '?season=' + season + '&episode=' + episode;
+// ─── API Fetches ─────────────────────────────────────────────
 
-          return fetch(downloadUrl, { method: 'GET', headers: headers })
-            .then(function(res) { if (!res.ok) throw new Error('Download ' + res.status); return res.json(); })
-            .then(function(data) {
-              if (!data || !data.sources || data.sources.length === 0) throw new Error('Vide');
-              return data.sources
-                .filter(function(s) { return s.m3u8 && s.m3u8.includes('.m3u8'); })
-                .map(function(s) {
-                  return {
-                    name: 'Movix',
-                    title: 'Nightflix ' + (s.quality || 'HD') + ' - ' + (s.language || 'MULTI'),
-                    url: s.m3u8,
-                    quality: s.quality || 'HD',
-                    format: 'm3u8',
-                    headers: {
-                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                      'Referer': 'https://darkibox.com/'
-                    }
-                  };
+function fetchPurstream(apiBase, referer, tmdbId, mediaType, season, episode) {
+    var url = mediaType === 'tv' ? apiBase + '/api/purstream/tv/' + tmdbId + '/stream?season=' + (season || 1) + '&episode=' + (episode || 1) : apiBase + '/api/purstream/movie/' + tmdbId + '/stream';
+    return fetch(url, { headers: { 'Referer': referer } }).then(function(res) { return res.json(); }).then(function(data) { return data.sources || []; });
+}
+
+function fetchCpasmal(apiBase, referer, tmdbId, mediaType, season, episode) {
+    var url = mediaType === 'tv' ? apiBase + '/api/cpasmal/tv/' + tmdbId + '/' + (season || 1) + '/' + (episode || 1) : apiBase + '/api/cpasmal/movie/' + tmdbId;
+    return fetch(url, { headers: { 'Referer': referer } }).then(function(res) { return res.json(); }).then(function(data) {
+        var sources = [];
+        ['vf', 'vostfr'].forEach(function(l) { if (data.links && data.links[l]) data.links[l].forEach(function(link) { sources.push({ url: link.url, name: 'Movix', player: link.server, lang: l }); }); });
+        return sources;
+    });
+}
+
+// ─── Processing ──────────────────────────────────────────────
+
+function tryFetchAll(apiBase, referer, tmdbId, mediaType, season, episode, meta, epInfo) {
+    return fetchPurstream(apiBase, referer, tmdbId, mediaType, season, episode)
+        .then(function(sources) {
+            return Promise.all(sources.map(function(source) {
+                return resolveRedirect(source.url, referer).then(function(resolvedUrl) {
+                    var qual = (source.name || "").indexOf('1080') !== -1 ? '1080p' : '720p';
+                    return {
+                        name: 'Movix - ' + qual,
+                        title: buildTitle(meta, qual, source.name, source.format || 'm3u8', null, null, season, episode, epInfo),
+                        url: resolvedUrl,
+                        quality: qual,
+                        format: source.format || 'm3u8',
+                        headers: { 'User-Agent': 'Mozilla/5.0' }
+                    };
                 });
+            }));
+        })
+        .catch(function() {
+            return fetchCpasmal(apiBase, referer, tmdbId, mediaType, season, episode).then(function(sources) {
+                return Promise.all(sources.slice(0, 5).map(function(s) {
+                    return resolveEmbed(s.url, referer).then(function(directUrl) {
+                        if (!directUrl) return null;
+                        return {
+                            name: 'Movix - HD',
+                            title: buildTitle(meta, 'HD', s.lang, 'm3u8', '', s.player, season, episode, epInfo),
+                            url: directUrl,
+                            quality: 'HD',
+                            format: 'm3u8',
+                            headers: { 'Referer': referer }
+                        };
+                    });
+                })).then(function(res) { return res.filter(function(r) { return r !== null; }); });
             });
         });
-    });
 }
 
-var UNSUPPORTED_PLAYERS = ['netu', 'voe', 'uqload', 'doodstream', 'vidoza', 'younetu', 'bysebuho', 'kakaflix', 'ralphy'];
-
-function processEmbedSources(sources, referer) {
-  var supportedSources = sources.filter(function(source) {
-    var urlLower = source.url.toLowerCase();
-    return !UNSUPPORTED_PLAYERS.some(function(player) { return urlLower.indexOf(player) !== -1; });
-  });
-
-  if (supportedSources.length === 0) return Promise.resolve([]);
-
-  return Promise.all(supportedSources.slice(0, 8).map(function(source) {
-    return resolveEmbed(source.url, referer).then(function(directUrl) {
-      if (!directUrl || (!directUrl.match(/\.m3u8/i) && !directUrl.match(/\.mp4/i))) return null;
-      return {
-        name: 'Movix',
-        title: source.name + ' - ' + source.player,
-        url: directUrl,
-        quality: 'HD',
-        format: directUrl.match(/\.mp4/i) ? 'mp4' : 'm3u8',
-        headers: { 'Referer': referer, 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-      };
-    });
-  })).then(function(results) {
-    return results.filter(function(r) { return r !== null; });
-  });
-}
-
-function tryFetchAll(apiBase, referer, tmdbId, mediaType, season, episode) {
-  return fetchPurstream(apiBase, referer, tmdbId, mediaType, season, episode)
-    .then(function(sources) {
-      return Promise.all(sources.map(function(source) {
-        return resolveRedirect(source.url, referer).then(function(resolvedUrl) {
-          return {
-            name: 'Movix',
-            title: source.name || 'Movix VF',
-            url: resolvedUrl,
-            quality: source.name && source.name.indexOf('1080') !== -1 ? '1080p' : '720p',
-            format: source.format || 'm3u8',
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-          };
-        });
-      }));
-    })
-    .catch(function() {
-      console.log('[Movix] Purstream vide, tentative Cpasmal + FStream + Darkino...');
-      return Promise.all([
-        fetchCpasmal(apiBase, referer, tmdbId, mediaType, season, episode).catch(function() { return []; }),
-        fetchFstream(apiBase, referer, tmdbId, mediaType, season, episode).catch(function() { return []; }),
-        fetchDarkino(apiBase, referer, tmdbId, mediaType, season, episode).catch(function(e) {
-          console.log('[Movix] Darkino échec: ' + (e.message || e));
-          return [];
-        })
-      ]).then(function(results) {
-        var embedSources = results[0].concat(results[1]);
-        var darkinoSources = results[2];
-        return processEmbedSources(embedSources, referer).then(function(resolved) {
-          var all = darkinoSources.concat(resolved);
-          if (all.length === 0) throw new Error('Aucune source');
-          return all;
-        });
-      });
-    });
-}
+// ─── Entry Point ─────────────────────────────────────────────
 
 function getStreams(tmdbId, mediaType, season, episode) {
-  console.log('[Movix] Fetching tmdbId=' + tmdbId + ' type=' + mediaType + ' S' + season + 'E' + episode);
+    return Promise.all([
+        getTmdbMetadata(tmdbId, mediaType),
+        mediaType === 'tv' ? getEpisodeInfo(tmdbId, season, episode) : Promise.resolve(null),
+        detectApi()
+    ]).then(function(results) {
+        var meta = results[0];
+        var epInfo = results[1];
+        var endpoint = results[2];
 
-  return detectApi()
-    .then(function(endpoint) {
-      if (!endpoint) throw new Error('Détection endpoint échouée');
-      return tryFetchAll(endpoint.api, endpoint.referer, tmdbId, mediaType, season, episode);
-    })
-    .catch(function(err) {
-      console.error('[Movix] Erreur globale:', err.message || err);
-      return [];
-    });
+        return tryFetchAll(endpoint.api, endpoint.referer, tmdbId, mediaType, season, episode, meta, epInfo);
+    }).catch(function() { return []; });
 }
 
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { getStreams };
-} else {
-  global.getStreams = getStreams;
-}
+if (typeof module !== 'undefined' && module.exports) module.exports = { getStreams };
+else global.getStreams = getStreams;
